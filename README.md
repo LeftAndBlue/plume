@@ -92,9 +92,11 @@ npm run dist           # vite build + tauri build --bundles nsis
 1. 签名密钥已生成：私钥 `C:\Users\<你>\.tauri\plume-updater.key`（**绝密，勿提交、勿外传；
    丢失后无法再向已安装用户推送更新**），公钥已写入 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`。
    当前私钥密码为空；如需加密码，重新生成密钥对并同步更新公钥与下面的 Secret。
-2. 在 GitHub 仓库 **Settings → Secrets and variables → Actions** 添加两个 Secret：
+2. 在 GitHub 仓库 **Settings → Secrets and variables → Actions** 添加 Secret：
    - `TAURI_SIGNING_PRIVATE_KEY`：私钥文件的**完整内容**（用记事本打开 key 文件复制）。
-   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：私钥密码（当前留空值即可）。
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：私钥密码。**GitHub 不允许空值 Secret：
+     当前密钥无密码，直接不创建这一项即可**（工作流取到空串，等价于无密码）。
+     若日后重新生成带密码的密钥对，再创建它并填入密码。
 
 **每次发版**：
 
