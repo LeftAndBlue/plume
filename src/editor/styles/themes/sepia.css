@@ -1,0 +1,64 @@
+/* Sepia — 羊皮纸 / 报刊衬线，适合长文 */
+:root[data-theme="sepia"] {
+  --font-body: var(--font-serif);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+  --bg: #fbf7ef;
+  --bg-soft: #f3eadc;
+  --chrome-bg: #e7dcc8;
+  --chrome-hover: #ddd0b8;
+  --chrome-active: #d3c4a6;
+  --chrome-border: #cbb892;
+  --text: #3b3228;
+  --text-muted: #655849;
+  --text-faint: #968877;
+  --heading: #221b14;
+  --strong: #1a140e;
+
+  --border: #e3d5bf;
+  --border-strong: #d2c2a8;
+  --hover-bg: #f1e8d7;
+  --active-bg: #e9dcc4;
+
+  --accent: #9c4221;
+  --accent-soft: rgba(156, 66, 33, 0.12);
+  --accent-underline: rgba(156, 66, 33, 0.4);
+
+  --sel-bg: rgba(156, 66, 33, 0.18);
+  --caret: #9c4221;
+  --match-bg: #f7e0a3;
+  --match-border: #d8b568;
+  --match-bg-strong: #f0cf7c;
+
+  --code-bg: #f4ecdd;
+  --code-text: #9c3a1f;
+  --code-border: #e6d8c0;
+  --chip-bg: #f0e6d4;
+
+  --quote-bar: #d8c5a4;
+  --quote-text: #7a6a55;
+  --quote-bg: #f8f1e4;
+
+  --table-head-bg: #f5ecdb;
+  --table-zebra: #fcf7ee;
+  --checkbox-border: #c7b696;
+
+  --panel-bg: #fbf6ec;
+  --btn-bg: #f2e9d9;
+  --scrollbar: #e0d2b8;
+  --scrollbar-hover: #cbb894;
+
+  --mark-bg: #f4e3a8;
+  --danger: #b23a2a;
+  --danger-soft: #f8e6e1;
+
+  --syn-keyword: #9d4b8f;
+  --syn-name: #3f3428;
+  --syn-func: #2f6fa8;
+  --syn-const: #97621b;
+  --syn-type: #a8761f;
+  --syn-op: #22787f;
+  --syn-comment: #a89a86;
+  --syn-string: #4f7a35;
+  --syn-invalid: #b23a2a;
+}

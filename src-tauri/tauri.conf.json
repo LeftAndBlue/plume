@@ -1,0 +1,62 @@
+{
+  "productName": "Plume",
+  "version": "0.1.0",
+  "identifier": "com.plume.editor",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Plume",
+        "width": 1180,
+        "height": 820,
+        "minWidth": 760,
+        "minHeight": 480,
+        "decorations": false,
+        "resizable": true,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost data: blob: http: https:; font-src 'self' asset: http://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown"],
+        "name": "Plume Markdown",
+        "description": "Markdown 文档",
+        "mimeType": "text/markdown"
+      }
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../public/fonts/*": "fonts/",
+      "icons/md.ico": "icons/md.ico"
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false,
+        "installerHooks": "./nsis/hooks.nsh"
+      }
+    }
+  }
+}

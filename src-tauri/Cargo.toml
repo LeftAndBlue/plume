@@ -1,0 +1,51 @@
+[package]
+name = "plume"
+version = "0.1.0"
+description = "Plume — Typora-like WYSIWYG Markdown editor (Tauri + Rust + Vue + CodeMirror 6)"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "plume_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2.3", features = ["protocol-asset"] }
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+notify = "8"
+trash = "3"
+encoding_rs = "0.8"
+chardetng = "0.1"
+base64 = "0.22"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+opener = "0.8"
+
+# Windows 打印链路（PrintToPdf / CapturePreview）。版本需与 tauri 的 wry 所用 webview2-com 对齐，
+# 见 build 时的 cargo tree 校验。
+webview2-com = "0.39"
+windows = { version = "0.62", features = [
+  "Win32_Foundation",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Ole",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_Shell",
+  "Win32_System_SystemServices",
+] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+# 桌面编辑器不是计算密集场景：opt-level="s" 按体积优化，配合 panic=abort
+# 去掉展开表，可执行文件明显更小，启动映射也更快。
+opt-level = "s"
+panic = "abort"

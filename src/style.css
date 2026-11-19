@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 这一层只放全局工具样式。编辑器与外壳的主题视觉见 editor/styles/（CSS 变量 + 四层级联）。 */
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+}
+
+/* body 是 flex 列容器（原主题约定），Vue 根节点要接续这条布局链。 */
+#app {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+}

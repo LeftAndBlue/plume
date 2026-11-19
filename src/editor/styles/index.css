@@ -1,0 +1,12 @@
+/* KaTeX 渲染样式改由 main.js 以 JS 导入：走 vite 插件统一裁剪字体格式
+   （只留 woff2 并指向 public/fonts），CSS @import 会被 postcss 直接内联、绕过插件。 */
+@import "./base.css";
+@import "./themes/white.css";
+@import "./themes/sepia.css";
+@import "./themes/vue.css";
+@import "./themes/night.css";
+@import "./themes/github.css";
+@import "./themes/newsprint.css";
+@import "./themes/pixyll.css";
+@import "./themes/gothic.css";
+@import "./motion.css";

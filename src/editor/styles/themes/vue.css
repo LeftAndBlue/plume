@@ -1,0 +1,65 @@
+/* Vue — 翠竹，技术文档风 */
+:root[data-theme="vue"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+
+  --bg: #ffffff;
+  --bg-soft: #f4faf6;
+  --chrome-bg: #e3efe8;
+  --chrome-hover: #d5e6dc;
+  --chrome-active: #c8ddd1;
+  --chrome-border: #b7d0c2;
+  --text: #2c3e50;
+  --text-muted: #3e5266;
+  --text-faint: #8b98a5;
+  --heading: #1b2b38;
+  --strong: #102028;
+
+  --border: #e2ece7;
+  --border-strong: #d3e2db;
+  --hover-bg: #eef5f1;
+  --active-bg: #e3eee8;
+
+  --accent: #42b883;
+  --accent-soft: rgba(66, 184, 131, 0.12);
+  --accent-underline: rgba(66, 184, 131, 0.4);
+
+  --sel-bg: rgba(66, 184, 131, 0.2);
+  --caret: #42b883;
+  --match-bg: #ffeea8;
+  --match-border: #e5c352;
+  --match-bg-strong: #ffd76e;
+
+  --code-bg: #f3f7f5;
+  --code-text: #d63200;
+  --code-border: #e2ece7;
+  --chip-bg: #eef4f1;
+
+  --quote-bar: #42b883;
+  --quote-text: #3e5266;
+  --quote-bg: rgba(66, 184, 131, 0.08);
+
+  --table-head-bg: #f3f7f5;
+  --table-zebra: #f8faf9;
+  --checkbox-border: #b7cfc4;
+
+  --panel-bg: #ffffff;
+  --btn-bg: #f3f7f5;
+  --scrollbar: #d5e4dc;
+  --scrollbar-hover: #b7cfc4;
+
+  --mark-bg: #e4f6ec;
+  --danger: #d63200;
+  --danger-soft: #fdecea;
+
+  --syn-keyword: #42b883;
+  --syn-name: #2c3e50;
+  --syn-func: #1f8a5b;
+  --syn-const: #d63200;
+  --syn-type: #2c3e50;
+  --syn-op: #42b883;
+  --syn-comment: #8b98a5;
+  --syn-string: #c2410c;
+  --syn-invalid: #d63200;
+}

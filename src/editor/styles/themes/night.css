@@ -1,0 +1,64 @@
+/* Night — 深色，低对比护眼 */
+:root[data-theme="night"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+  --bg: #1c2028;
+  --bg-soft: #161920;
+  --chrome-bg: #101318;
+  --chrome-hover: #1c212b;
+  --chrome-active: #262c38;
+  --chrome-border: #343b4a;
+  --text: #c9d1d9;
+  --text-muted: #8b949e;
+  --text-faint: #586069;
+  --heading: #f0f6fc;
+  --strong: #ffffff;
+
+  --border: #2c3340;
+  --border-strong: #3a4252;
+  --hover-bg: #232833;
+  --active-bg: #2b313d;
+
+  --accent: #58a6ff;
+  --accent-soft: rgba(88, 166, 255, 0.14);
+  --accent-underline: rgba(88, 166, 255, 0.4);
+
+  --sel-bg: rgba(88, 166, 255, 0.24);
+  --caret: #58a6ff;
+  --match-bg: #5a4a1a;
+  --match-border: #a8873a;
+  --match-bg-strong: #7d6420;
+
+  --code-bg: #1e2128;
+  --code-text: #ff7b72;
+  --code-border: #2b303b;
+  --chip-bg: #262c37;
+
+  --quote-bar: #3d4655;
+  --quote-text: #a3adbd;
+  --quote-bg: #1e222b;
+
+  --table-head-bg: #222833;
+  --table-zebra: #1d222b;
+  --checkbox-border: #4a5262;
+
+  --panel-bg: #20232a;
+  --btn-bg: #262c37;
+  --scrollbar: #333a47;
+  --scrollbar-hover: #414a5a;
+
+  --mark-bg: rgba(255, 214, 90, 0.28);
+  --danger: #ff8a7a;
+  --danger-soft: #3a2020;
+
+  --syn-keyword: #c678dd;
+  --syn-name: #d5dae3;
+  --syn-func: #61afef;
+  --syn-const: #d19a66;
+  --syn-type: #e5c07b;
+  --syn-op: #56b6c2;
+  --syn-comment: #6b7484;
+  --syn-string: #98c379;
+  --syn-invalid: #f07a6a;
+}

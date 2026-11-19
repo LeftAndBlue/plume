@@ -1,0 +1,65 @@
+/* White — 浅色，接近 GitHub 的纸白，正文不用纯黑 */
+:root[data-theme="white"],
+:root:not([data-theme]) {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+  --bg: #ffffff;
+  --bg-soft: #f4f6f8;
+  --chrome-bg: #e6ebf2;
+  --chrome-hover: #d9e0ea;
+  --chrome-active: #d0d8e4;
+  --chrome-border: #c5ceda;
+  --text: #2c3440;
+  --text-muted: #57606a;
+  --text-faint: #8c959f;
+  --heading: #11161d;
+  --strong: #0f141a;
+
+  --border: #e4e9f0;
+  --border-strong: #d3dae3;
+  --hover-bg: #eef1f5;
+  --active-bg: #e3e8ef;
+
+  --accent: #2563eb;
+  --accent-soft: rgba(37, 99, 235, 0.1);
+  --accent-underline: rgba(37, 99, 235, 0.35);
+
+  --sel-bg: rgba(37, 99, 235, 0.18);
+  --caret: #2563eb;
+  --match-bg: #ffeea8;
+  --match-border: #e5c352;
+  --match-bg-strong: #ffd76e;
+
+  --code-bg: #f6f8fa;
+  --code-text: #b3266d;
+  --code-border: #ecedf2;
+  --chip-bg: #f1f3f6;
+
+  --quote-bar: #cfd8e5;
+  --quote-text: #5d6b7e;
+  --quote-bg: #fafbfd;
+
+  --table-head-bg: #f7f9fb;
+  --table-zebra: #fcfcfd;
+  --checkbox-border: #c3cbd7;
+
+  --panel-bg: #ffffff;
+  --btn-bg: #f5f6f8;
+  --scrollbar: #dfe3e9;
+  --scrollbar-hover: #c8cfd8;
+
+  --mark-bg: #fff3a8;
+  --danger: #c0392b;
+  --danger-soft: #fdecea;
+
+  --syn-keyword: #a626a4;
+  --syn-name: #2f3440;
+  --syn-func: #4078f2;
+  --syn-const: #986801;
+  --syn-type: #c18401;
+  --syn-op: #0184bc;
+  --syn-comment: #9aa1ad;
+  --syn-string: #50a14f;
+  --syn-invalid: #e45649;
+}

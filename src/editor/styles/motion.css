@@ -1,0 +1,705 @@
+/* 动效。标题、加粗、列表变成排版时不加过渡。缩放时 .on-zoom 会把过渡时长清零。 */
+
+@keyframes menu-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes menu-dropdown-slide-down {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInWeak {
+  from {
+    opacity: 0.8;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInLeftBig {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tipIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes menu-check-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes blink-bg {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  40% {
+    background-color: #ffe58a;
+  }
+}
+
+@keyframes showRawBlockTooltip {
+  from {
+    background-color: var(--bg);
+  }
+  to {
+    background-color: var(--bg-soft);
+  }
+}
+
+@keyframes loadingC {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  40% {
+    transform: translateY(-5px);
+    opacity: 1;
+  }
+}
+
+@keyframes sk-stretchdelay {
+  0%,
+  40%,
+  100% {
+    transform: scaleY(0.4);
+  }
+  20% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+body.on-zoom *,
+body.on-zoom *::before,
+body.on-zoom *::after {
+  transition-duration: 0s !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+}
+
+/* 侧栏滑入滑出。顶栏、正文、底栏在右侧一列里，跟着侧栏宽度一起让开。 */
+body.motion-ready #sidebar {
+  transition:
+    width 0.3s ease,
+    transform 0.3s ease,
+    border-color 0.3s ease;
+}
+
+#sidebar {
+  transform: translateX(0);
+}
+
+body.hide-sidebar #sidebar {
+  width: 0;
+  min-width: 0;
+  transform: translateX(-12px);
+  overflow: hidden;
+  border-right-color: transparent;
+  pointer-events: none;
+}
+
+body.motion-ready #chrome,
+body.motion-ready #statusbar,
+body.motion-ready #main {
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.cm-editor .cm-content {
+  transition: padding-top 0.4s ease-out;
+}
+
+/* 汉堡菜单从左侧滑入，右侧内容轻轻淡入 */
+#menu-panel {
+  pointer-events: none;
+}
+
+#menu-panel.is-open {
+  pointer-events: auto;
+}
+
+#menu-panel .menu-side {
+  transform: translateX(-300px);
+}
+
+body.motion-ready #menu-panel .menu-side {
+  transition: transform 0.3s ease;
+}
+
+#menu-panel.is-open .menu-side {
+  transform: translateX(0);
+}
+
+#menu-panel .menu-stage {
+  opacity: 0.8;
+}
+
+#menu-panel.is-open .menu-stage {
+  animation: fadeInWeak 0.2s ease forwards;
+}
+
+#menu-panel .menu-stage-title,
+#menu-panel .menu-pop {
+  animation: menu-slide-down 0.1s ease-out;
+}
+
+.menu-mark:not(:empty) {
+  animation: menu-check-in 2s ease-in;
+}
+
+.lang-pop {
+  animation: fadeInWeak 0.25s ease-in-out;
+  box-shadow: 0 8px 22px rgba(20, 24, 32, 0.1);
+}
+
+body[data-side="outline"] #outline {
+  animation: menu-dropdown-slide-down 0.3s ease reverse, fadeInWeak 0.1s ease;
+}
+
+body[data-side="files"] #file-tree {
+  animation: fadeInLeftBig 0.3s ease, fadeInWeak 1s ease;
+}
+
+.ft-row,
+.outline-item {
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease,
+    top 0.5s ease;
+}
+
+.ft-empty,
+.outline-empty {
+  opacity: 0.7;
+  transition: opacity 0.5s ease;
+}
+
+.ft-empty:hover,
+.outline-empty:hover {
+  opacity: 1;
+}
+
+#st-hint.is-flash {
+  animation: tipIn 150ms cubic-bezier(0, 0, 0.2, 1) 0.1s both;
+}
+
+.fmt-pop {
+  transition:
+    left 0.22s cubic-bezier(0.22, 0.61, 0.36, 1),
+    top 0.3s ease,
+    opacity 0.15s ease;
+}
+
+.cm-panels-top {
+  overflow: hidden;
+  animation: search-grow 0.4s ease-out;
+}
+
+@keyframes search-grow {
+  from {
+    max-height: 0;
+  }
+  to {
+    max-height: 104px;
+  }
+}
+
+.cm-panel.cm-search {
+  animation: menu-slide-down 0.1s ease-out;
+}
+
+.cm-panel.cm-search input[name="replace"],
+.cm-panel.cm-search button[name="replace"],
+.cm-panel.cm-search button[name="replaceAll"] {
+  animation: fadeInWeak 0.2s ease 0.15s both;
+}
+
+.cm-fence-copy,
+.cm-lang-badge.is-on {
+  transition: background-color 0.5s linear, opacity 0.2s ease, color 0.2s ease;
+}
+
+.cm-code-line:hover .cm-fence-copy {
+  animation: showRawBlockTooltip 0.5s linear;
+}
+
+.cm-line.blink-area {
+  animation: blink-bg 1s ease 8;
+}
+
+.motion-spin {
+  animation: spin 0.8s linear infinite;
+}
+
+.motion-loading i {
+  display: inline-block;
+  width: 4px;
+  height: 10px;
+  margin: 0 1px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: loadingC 0.6s ease infinite;
+}
+
+.motion-loading i:nth-child(2) {
+  animation-delay: 0.1s;
+}
+
+.motion-loading i:nth-child(3) {
+  animation-delay: 0.2s;
+}
+
+.file-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  padding: 0 12px;
+  transition: height 0.28s ease, opacity 0.28s ease;
+}
+
+body[data-side="files"] .file-search {
+  height: 54px;
+  opacity: 1;
+  padding-bottom: 8px;
+}
+
+.file-search.is-loading input {
+  background-image: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
+  background-size: 40% 100%;
+  animation: search-sheen 1.2s ease infinite;
+}
+
+@keyframes search-sheen {
+  from { background-position: -40% 0; }
+  to { background-position: 140% 0; }
+}
+
+.file-search input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12.5px var(--font-ui);
+}
+
+.file-search button {
+  flex: 0 0 30px;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.file-search button:hover { color: var(--accent); border-color: var(--accent); }
+
+/* 搜索选项行：区分大小写 / 全词 / 正则，随文件侧栏一起展开收起 */
+.file-search-opts {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  padding: 0 12px;
+  transition: height 0.28s ease, opacity 0.28s ease;
+}
+
+body[data-side="files"] .file-search-opts {
+  height: 26px;
+  opacity: 1;
+  padding-bottom: 6px;
+}
+
+.fs-opt {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text-muted);
+  font: 11px var(--font-ui);
+  cursor: pointer;
+}
+
+.fs-opt:hover { color: var(--accent); border-color: var(--accent); }
+
+.fs-opt.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.ft-search-error { color: var(--danger); }
+
+.settings-actions { display: flex; gap: 8px; margin-top: 16px; }
+
+#sidebar-split {
+  position: relative;
+  z-index: 4;
+  flex: 0 0 0;
+  width: 0;
+  margin: 0;
+  cursor: col-resize;
+  background: transparent;
+}
+
+#sidebar-split::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  background: transparent;
+  transition: width 0.25s ease, left 0.25s ease, background-color 0.25s ease;
+}
+
+#sidebar-split:hover::before,
+body.sidebar-dragging #sidebar-split::before {
+  left: -2px;
+  width: 4px;
+  background: var(--accent);
+}
+
+body.hide-sidebar #sidebar-split {
+  display: none;
+}
+
+body.sidebar-dragging #sidebar,
+body.sidebar-dragging #workspace {
+  transition: none !important;
+}
+
+#file-tree {
+  position: relative;
+}
+
+.ft-too-many {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  height: 84px;
+  overflow: hidden;
+  pointer-events: none;
+  animation: too-many-h 0.5s ease;
+}
+
+.ft-too-many-mask {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent, var(--chrome-bg) 70%);
+  animation: too-many-bg 1s ease;
+}
+
+.ft-too-many-text {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  animation: fadeInWeak 1s ease;
+}
+
+@keyframes too-many-h {
+  from { height: 0; }
+  to { height: 84px; }
+}
+
+@keyframes too-many-bg {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.settings {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(20, 24, 32, 0.28);
+  animation: sheet-fade 0.5s ease;
+}
+
+.settings[hidden] {
+  display: none !important;
+}
+
+.settings-card {
+  width: min(520px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 18px 20px 16px;
+  border-radius: 12px;
+  background: var(--panel-bg);
+  color: var(--text);
+  box-shadow: 0 18px 50px rgba(8, 12, 20, 0.24);
+  animation: sheet-rise 0.3s ease;
+}
+
+@keyframes sheet-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sheet-rise {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes showFocus {
+  from { outline-color: transparent; }
+  to { outline-color: var(--accent); }
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.settings-head h2 {
+  margin: 0;
+  font-size: 20px;
+}
+
+#settings-close {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.settings-row select {
+  min-width: 160px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.settings-note {
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-btn {
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+/* 未保存三态询问（Typora 式）：左侧「保存并关闭 / 不保存」，右侧「取消」。
+   三个按钮都有底色，和卡片拉开层次；危险操作是实心红。 */
+.ask-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 26px;
+}
+
+.ask-group {
+  display: flex;
+  gap: 10px;
+}
+
+.ask-actions button {
+  min-width: 88px;
+  height: 34px;
+  padding: 0 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  /* 次要按钮铺一层浅灰底，和白卡片区分开，而不是只剩一圈边框 */
+  background: var(--hover-bg, #eef1f5);
+  color: var(--text);
+  font: 500 13px/1 var(--font-ui);
+  cursor: pointer;
+  transition: filter 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+}
+
+.ask-actions .btn-ghost:hover {
+  background: var(--active-bg, #e3e8ef);
+  filter: none;
+}
+
+.ask-actions button:hover {
+  filter: brightness(0.95);
+}
+
+.ask-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.ask-actions .btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.ask-actions .btn-danger {
+  background: var(--danger, #c0392b);
+  border-color: var(--danger, #c0392b);
+  color: #fff;
+}
+
+.ask-actions .btn-primary:hover,
+.ask-actions .btn-danger:hover {
+  filter: brightness(1.08);
+}
+
+.settings-row input[type="range"] {
+  width: 160px;
+}
+
+.settings-row input:focus,
+.settings-row select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  animation: showFocus 0.3s ease;
+}
+
+.settings-group {
+  margin: 14px 0 6px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.theme-card.is-on {
+  border-color: var(--accent);
+}
+
+.theme-swatch {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: Georgia, "Songti SC", serif;
+  font-size: 18px;
+}
+
+.theme-swatch i {
+  width: 18px;
+  height: 4px;
+  margin-right: 8px;
+}
+
+.spell-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.spell-ready {
+  animation: fadeInWeak 1s ease;
+}
+
+.license-copy {
+  white-space: pre-wrap;
+  line-height: 1.7;
+  font-size: 13px;
+}
