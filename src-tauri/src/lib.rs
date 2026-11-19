@@ -337,27 +337,26 @@ fn image_trash(source: String, doc_path: String) -> Result<bool, String> {
 /* ---------------- 导出 ---------------- */
 
 #[tauri::command]
-fn export_html(app: AppHandle, html: String, s: String, doc_dir: Option<String>) -> Result<String, String> {
-    exports::export_html_file(&app, &html, &s, doc_dir.as_deref()).map_err(cmd_err)
+async fn export_html(app: AppHandle, html: String, s: String, doc_dir: Option<String>) -> Result<String, String> {
+    exports::export_html_file(&app, &html, &s, doc_dir.as_deref()).await.map_err(cmd_err)
 }
 
 #[tauri::command]
-fn export_pdf(app: AppHandle, html: String, s: String, doc_dir: Option<String>) -> Result<String, String> {
-    let path = app
-        .dialog()
-        .file()
-        .set_title("导出为 PDF")
-        .add_filter("PDF 文档", &["pdf"])
-        .set_file_name(s)
-        .blocking_save_file();
-    let Some(f) = path else { return Err("已取消".into()) };
-    let out = f.into_path().map_err(|e| e.to_string())?;
+async fn export_pdf(app: AppHandle, html: String, s: String, doc_dir: Option<String>) -> Result<String, String> {
+    let Some(out) = exports::save_dialog(&app, "导出为 PDF", "PDF 文档", "pdf", &s).await else {
+        return Err("已取消".into());
+    };
     let fonts = exports::fonts_dir(&app);
     let page = exports::materialize_html(&html, doc_dir.as_deref(), fonts.as_deref());
     #[cfg(target_os = "windows")]
     {
-        webview_print::print_to_pdf(&app, &page, &out).map_err(cmd_err)?;
-        Ok(out.to_string_lossy().to_string())
+        // 打印链路含消息泵等待，放线程池执行，避免占用 async worker 与 UI 主线程
+        tauri::async_runtime::spawn_blocking(move || {
+            webview_print::print_to_pdf(&app, &page, &out).map(|_| out.to_string_lossy().to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(cmd_err)
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -367,22 +366,20 @@ fn export_pdf(app: AppHandle, html: String, s: String, doc_dir: Option<String>) 
 }
 
 #[tauri::command]
-fn export_png(app: AppHandle, html: String, s: String, doc_dir: Option<String>) -> Result<String, String> {
-    let path = app
-        .dialog()
-        .file()
-        .set_title("导出为图片")
-        .add_filter("PNG 图片", &["png"])
-        .set_file_name(s)
-        .blocking_save_file();
-    let Some(f) = path else { return Err("已取消".into()) };
-    let out = f.into_path().map_err(|e| e.to_string())?;
+async fn export_png(app: AppHandle, html: String, s: String, doc_dir: Option<String>) -> Result<String, String> {
+    let Some(out) = exports::save_dialog(&app, "导出为图片", "PNG 图片", "png", &s).await else {
+        return Err("已取消".into());
+    };
     let fonts = exports::fonts_dir(&app);
     let page = exports::materialize_html(&html, doc_dir.as_deref(), fonts.as_deref());
     #[cfg(target_os = "windows")]
     {
-        webview_print::capture_png(&app, &page, &out).map_err(cmd_err)?;
-        Ok(out.to_string_lossy().to_string())
+        tauri::async_runtime::spawn_blocking(move || {
+            webview_print::capture_png(&app, &page, &out).map(|_| out.to_string_lossy().to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(cmd_err)
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -392,13 +389,13 @@ fn export_png(app: AppHandle, html: String, s: String, doc_dir: Option<String>) 
 }
 
 #[tauri::command]
-fn export_docx(app: AppHandle, bytes: Vec<u8>, s: String) -> Result<String, String> {
-    exports::export_docx_file(&app, &bytes, &s).map_err(cmd_err)
+async fn export_docx(app: AppHandle, bytes: Vec<u8>, s: String) -> Result<String, String> {
+    exports::export_docx_file(&app, &bytes, &s).await.map_err(cmd_err)
 }
 
 #[tauri::command]
-fn export_file(app: AppHandle, payload: exports::ExportFilePayload) -> Result<String, String> {
-    exports::export_generic_file(&app, payload).map_err(cmd_err)
+async fn export_file(app: AppHandle, payload: exports::ExportFilePayload) -> Result<String, String> {
+    exports::export_generic_file(&app, payload).await.map_err(cmd_err)
 }
 
 /* ---------------- 系统对话框 ---------------- */

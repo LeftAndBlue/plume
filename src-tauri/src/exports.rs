@@ -136,23 +136,37 @@ pub fn materialize_html(html: &str, doc_dir: Option<&str>, fonts: Option<&Path>)
     out
 }
 
-fn save_dialog(app: &AppHandle, title: &str, filter_name: &str, ext: &str, suggest: &str) -> Option<PathBuf> {
+/// 异步保存对话框：插件回调式 API + 线程池接收，任何线程调用都不阻塞 UI 主线程。
+/// （blocking_save_file 在同步命令里会模态占用主线程，是导出"卡死"的土壤。）
+pub(crate) async fn save_dialog(
+    app: &AppHandle,
+    title: &str,
+    filter_name: &str,
+    ext: &str,
+    suggest: &str,
+) -> Option<PathBuf> {
+    let (tx, rx) = std::sync::mpsc::channel();
     app.dialog()
         .file()
         .set_title(title)
         .add_filter(filter_name, &[ext])
         .set_file_name(suggest)
-        .blocking_save_file()
-        .and_then(|f| f.into_path().ok())
+        .save_file(move |f| {
+            let _ = tx.send(f.and_then(|f| f.into_path().ok()));
+        });
+    tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten()
 }
 
-pub fn export_html_file(
+pub async fn export_html_file(
     app: &AppHandle,
     html: &str,
     s: &str,
     doc_dir: Option<&str>,
 ) -> Result<String, AnyErr> {
-    let Some(path) = save_dialog(app, "导出为 HTML", "HTML 文档", "html", s) else {
+    let Some(path) = save_dialog(app, "导出为 HTML", "HTML 文档", "html", s).await else {
         return Err("已取消".into());
     };
     let fonts = fonts_dir(app);
@@ -161,8 +175,8 @@ pub fn export_html_file(
     Ok(pstr(&path))
 }
 
-pub fn export_docx_file(app: &AppHandle, bytes: &[u8], s: &str) -> Result<String, AnyErr> {
-    let Some(path) = save_dialog(app, "导出为 Word", "Word 文档", "docx", s) else {
+pub async fn export_docx_file(app: &AppHandle, bytes: &[u8], s: &str) -> Result<String, AnyErr> {
+    let Some(path) = save_dialog(app, "导出为 Word", "Word 文档", "docx", s).await else {
         return Err("已取消".into());
     };
     fs::write(&path, bytes)?;
@@ -181,10 +195,10 @@ pub struct ExportFilePayload {
     pub ext: Option<String>,
 }
 
-pub fn export_generic_file(app: &AppHandle, payload: ExportFilePayload) -> Result<String, AnyErr> {
+pub async fn export_generic_file(app: &AppHandle, payload: ExportFilePayload) -> Result<String, AnyErr> {
     let fallback = if payload.kind == "epub" { "epub" } else { "tex" };
     let ext = payload.ext.as_deref().unwrap_or(fallback);
-    let Some(path) = save_dialog(app, "导出", &payload.kind, ext, &payload.s) else {
+    let Some(path) = save_dialog(app, "导出", &payload.kind, ext, &payload.s).await else {
         return Err("已取消".into());
     };
     if let Some(bytes) = payload.bytes {
