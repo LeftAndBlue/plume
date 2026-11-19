@@ -2577,8 +2577,29 @@ function applySpellcheck() {
 }
 
 const LICENSE_TEXT = [
-  "Plume 是本地 Markdown 编辑器。",
-  "仓库本身没有单独声明开源许可证；请按你拿到这份代码时的约定使用。",
+  "Plume 以 MIT 许可证开源，仓库根目录 LICENSE 文件为准。",
+  "",
+  `MIT License
+
+Copyright (c) 2026 LeftAndBlue
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.`,
   "",
   "界面里用到的第三方组件各自保留原许可证：",
   "Tauri、CodeMirror、Lezer、KaTeX、Mermaid、Vue、Lucide。",

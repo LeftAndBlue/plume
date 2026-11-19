@@ -204,6 +204,11 @@ WebView2 **不允许页面加载 `file://` 子资源**，所以本地图片必�
 - 文件拖入走 Tauri 原生 drag-drop 事件拿真实路径（HTML5 drop 被宿主接管）。
 - 本地图片经 asset protocol（scope `**`，与 Electron 的 file:// 直读等价，适合单机编辑器）。
 
+## 许可证
+
+MIT © 2026 LeftAndBlue，全文见 [LICENSE](LICENSE)。
+第三方组件（Tauri、CodeMirror、Lezer、KaTeX、Mermaid、Vue、Lucide 等）各自保留原许可证。
+
 ## 验证记录
 
 - `npm run build`：通过（Vite 生产构建）。

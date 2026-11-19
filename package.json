@@ -3,6 +3,7 @@
   "version": "0.1.1",
   "private": true,
   "description": "Plume — Typora-like WYSIWYG Markdown editor built on Tauri + Rust + Vue + CodeMirror 6",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
