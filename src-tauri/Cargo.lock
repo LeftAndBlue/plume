@@ -2980,7 +2980,7 @@ dependencies = [
 
 [[package]]
 name = "plume"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "chardetng",
@@ -3001,6 +3001,7 @@ dependencies = [
  "trash",
  "webview2-com",
  "windows 0.62.2",
+ "windows-registry",
 ]
 
 [[package]]

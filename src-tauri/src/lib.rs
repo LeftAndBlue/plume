@@ -50,6 +50,63 @@ fn app_info(app: AppHandle) -> Result<AppInfo, String> {
     })
 }
 
+/// 读取 Windows 系统代理（WinINET 设置），供 updater 的检查/下载请求使用。
+/// updater 的 reqwest 默认只认环境变量代理，不认系统代理；国内网络直连
+/// GitHub 常失败，这里把系统代理显式传给 check({ proxy })。
+#[tauri::command]
+fn system_proxy() -> Option<String> {
+    #[cfg(windows)]
+    {
+        let key = windows_registry::CURRENT_USER
+            .open("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")
+            .ok()?;
+        if key.get_u32("ProxyEnable").unwrap_or(0) != 1 {
+            return None;
+        }
+        let server = key.get_string("ProxyServer").ok()?;
+        let server = server.trim().to_string();
+        if server.is_empty() {
+            return None;
+        }
+        // 形如 "127.0.0.1:7890" 或 "http=host:port;https=host:port;socks=host:port"
+        let (mut https, mut http, mut socks) = (None, None, None);
+        if server.contains('=') {
+            for part in server.split(';') {
+                let part = part.trim();
+                if let Some(v) = part.strip_prefix("https=") {
+                    https = https.or(Some(v.trim()));
+                } else if let Some(v) = part.strip_prefix("http=") {
+                    http = http.or(Some(v.trim()));
+                } else if let Some(v) = part.strip_prefix("socks=") {
+                    socks = socks.or(Some(v.trim()));
+                }
+            }
+        } else {
+            http = Some(server.as_str());
+        }
+        let (scheme, host) = match https.or(http).or(socks) {
+            Some(h) if !h.is_empty() => (
+                if socks.is_some() && https.is_none() && http.is_none() {
+                    "socks5://"
+                } else {
+                    "http://"
+                },
+                h,
+            ),
+            _ => return None,
+        };
+        Some(if host.contains("://") {
+            host.to_string()
+        } else {
+            format!("{scheme}{host}")
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
 const BASE_TEMPLATE: &str = r#"/* Plume 用户自定义 CSS
  * 只影响编辑器外观，不动交互逻辑。
  * 保存后回编辑器按「应用 CSS」生效。
@@ -503,6 +560,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             app_info,
+            system_proxy,
             theme_paths,
             theme_open_folder,
             file_open,

@@ -155,6 +155,11 @@ const zhCN = {
   "update.done": "更新完成，正在重启…",
   "update.latest": "已是最新版本",
   "update.failed": "更新失败：",
+  "update.checking": "正在检查更新…",
+  "update.failedTitle": "检查更新失败",
+  "update.networkHint": "若处于需要代理的网络，请确认系统代理已开启后重试。",
+  "update.retry": "重试",
+  "update.close": "关闭",
 
   "quick.title": "快速打开",
   "quick.placeholder": "输入文件名或内容关键词…",
@@ -307,6 +312,11 @@ const en = {
   "update.done": "Update complete, restarting…",
   "update.latest": "You're up to date",
   "update.failed": "Update failed: ",
+  "update.checking": "Checking for updates…",
+  "update.failedTitle": "Update check failed",
+  "update.networkHint": "If your network requires a proxy, make sure the system proxy is on and retry.",
+  "update.retry": "Retry",
+  "update.close": "Close",
 
   "quick.title": "Quick open",
   "quick.placeholder": "Type a file name or content keyword…",

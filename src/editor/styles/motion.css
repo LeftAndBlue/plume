@@ -387,6 +387,19 @@ body[data-side="files"] .file-search-opts {
 
 .settings-actions { display: flex; gap: 8px; margin-top: 16px; }
 
+/* 更新检查/下载的等待态：旋转圈 + 文案一行 */
+.update-wait { display: flex; align-items: center; gap: 8px; }
+.update-spinner {
+  display: inline-block;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 #sidebar-split {
   position: relative;
   z-index: 4;
