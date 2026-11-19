@@ -1,0 +1,47 @@
+name: Release
+
+# 打 v* 标签即发布：构建 Windows 安装包 + updater 签名产物，
+# 生成 latest.json 一并上传到 Release，已安装客户端据此发现新版本。
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 仓库 Settings → Secrets and variables → Actions 里配置：
+          # TAURI_SIGNING_PRIVATE_KEY = 私钥文件内容（plume-updater.key）
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD = 私钥密码（当前为空字符串）
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Plume ${{ github.ref_name }}'
+          releaseBody: '下载 Plume-setup.exe 安装；已安装的用户会在应用内收到更新提示。'
+          includeUpdaterJson: true
+          updaterJsonPreferNSIS: true
+          args: --bundles nsis

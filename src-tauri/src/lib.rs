@@ -477,6 +477,10 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        // 应用内更新：检查 / 下载 / 安装走 GitHub Releases 的 latest.json，
+        // 签名公钥在 tauri.conf.json 的 plugins.updater 里；process 用于装完后重启。
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(InitialFile(std::sync::Mutex::new(file_arg(
             &std::env::args().collect::<Vec<_>>(),
         ))))

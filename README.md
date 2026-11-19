@@ -81,6 +81,47 @@ npm run dist           # vite build + tauri build --bundles nsis
 图标：`src-tauri/icons/icon.png` 来自用户提供的 logo，自动裁出主体、居中并保留透明背景，
 `npx tauri icon src-tauri/icons/icon.png` 可重新生成全套。
 
+## 发布更新（应用内自动更新）
+
+已安装的客户端通过 Tauri updater 插件检查 GitHub Releases 上的 `latest.json`，
+发现新版本后弹面板提示，下载并校验签名后静默安装、重启生效。
+启动 8 秒后静默检查一次（离线或尚未发版时不打扰），也可从「帮助 → 检查更新…」手动触发。
+
+**一次性配置**（只需做一次）：
+
+1. 签名密钥已生成：私钥 `C:\Users\<你>\.tauri\plume-updater.key`（**绝密，勿提交、勿外传；
+   丢失后无法再向已安装用户推送更新**），公钥已写入 `src-tauri/tauri.conf.json` 的 `plugins.updater.pubkey`。
+   当前私钥密码为空；如需加密码，重新生成密钥对并同步更新公钥与下面的 Secret。
+2. 在 GitHub 仓库 **Settings → Secrets and variables → Actions** 添加两个 Secret：
+   - `TAURI_SIGNING_PRIVATE_KEY`：私钥文件的**完整内容**（用记事本打开 key 文件复制）。
+   - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`：私钥密码（当前留空值即可）。
+
+**每次发版**：
+
+1. 同步改三处版本号：`src-tauri/tauri.conf.json`、`package.json`、`src-tauri/Cargo.toml`
+   （updater 以 `tauri.conf.json` 的 `version` 为准，必须大于用户已装版本）。
+2. 提交并打标签推送：
+
+   ```bash
+   git add -A && git commit -m "release: v0.1.1"
+   git tag v0.1.1
+   git push && git push origin v0.1.1
+   ```
+
+3. `.github/workflows/release.yml` 自动构建 NSIS 安装包与 updater 签名产物，
+   创建 Release 并上传 `latest.json`。已安装用户随即可在应用内收到更新。
+
+**本地验证签名打包**（可选）：
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = "$env:USERPROFILE\.tauri\plume-updater.key"
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+npm run dist
+```
+
+产物除安装包外还有同名的 `Plume_<版本>_x64-setup.exe.sig`（updater 签名，
+`latest.json` 里引用的是安装包本体 + 该签名内容）。
+
 ## 环境依赖
 
 - Node 22+、Rust stable（MSVC toolchain）、Visual Studio C++ 生成工具、WebView2 Runtime。

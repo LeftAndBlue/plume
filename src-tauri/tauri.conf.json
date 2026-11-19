@@ -30,9 +30,21 @@
       }
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDA1MDA4MzNDQTczNUJCNzcKUldSM3V6V25QSU1BQmVyM3V3MnZJd29XU1dDcnVTNTNuTkVWZlEydWlTTmxoMWFjaUFsVzlNczQK",
+      "endpoints": [
+        "https://github.com/LeftAndBlue/plume/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
         "ext": ["md", "markdown"],

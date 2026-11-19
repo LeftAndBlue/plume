@@ -37,6 +37,8 @@
     "@lezer/highlight": "^1.2.5",
     "@lezer/markdown": "^1.8.1",
     "@tauri-apps/api": "^2.3.0",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.14.1",
     "katex": "^0.16.47",
     "lucide-vue-next": "^0.469.0",
     "mermaid": "^11.17.2",

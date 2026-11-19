@@ -73,6 +73,7 @@ import { ACCEL, shortcutText } from "./shortcuts.js";
 import { slugify } from "./slugify.js";
 import { createQuickOpen } from "./quick-open.js";
 import { createSettingsBackup } from "./settings-backup.js";
+import { createUpdater } from "../platform/updater.js";
 import { t, setLocale, LOCALES, i18n } from "../i18n.js";
 import { withTrailingBlank, detectDocFormat, serializeForDisk } from "./doc-format.js";
 import {
@@ -2827,6 +2828,12 @@ function bindSidebarSplit() {
 
 /* ---------------- 工具栏 / 菜单 ---------------- */
 
+const updater = createUpdater({
+  openSheet,
+  flash,
+  settle: settleCurrentDocument,
+});
+
 const commands = {
   new: newDoc,
   open: openFile,
@@ -2928,6 +2935,7 @@ const commands = {
     if (ok === false) flash("无法打开主题目录");
   },
   shortcuts: () => showInfo(SHORTCUTS_DOC),
+  "check-update": () => updater.checkForUpdate(),
   about: async () => {
     const info = (await window.studio?.info?.()) || {};
     showInfo({
@@ -3318,6 +3326,7 @@ const MENUS = [
     mnemonic: "H",
     items: () => [
       { label: t("menu.shortcuts"), cmd: "shortcuts", accel: ACCEL.shortcuts },
+      { label: t("menu.checkUpdate"), cmd: "check-update" },
       { label: t("menu.settings"), cmd: "settings" },
       { label: t("menu.license"), cmd: "license" },
       { label: t("menu.about"), cmd: "about" },
@@ -3642,6 +3651,12 @@ if (window.studio?.onOpenFile) {
 }
 
 /* ---------------- 暴露给 Vue 外壳的命令 API ---------------- */
+
+// 启动后静默检查一次更新：只在打包后的 Tauri 壳里跑，开发/自检环境不打扰。
+// 失败（离线、仓库尚未发版）不提示；发现新版才弹安装面板。
+if (isTauri && !import.meta.env.DEV) {
+  setTimeout(() => updater.checkForUpdate({ silent: true }), 8000);
+}
 
 return {
   run,
