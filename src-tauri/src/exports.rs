@@ -84,16 +84,16 @@ pub fn materialize_html(html: &str, doc_dir: Option<&str>, fonts: Option<&Path>)
     let mut out = html.to_string();
 
     // KaTeX 字体：fonts/X.woff2 / ./fonts/... / dist/fonts/... → data URI
+    // 注意：Rust regex 不支持反向引用（\1），引号只做可选匹配，不配对校验。
     if let Some(font_dir) = fonts {
         let re = regex::Regex::new(
-            r#"url\((['"]?)(?:[^)'"]*?/)?fonts/([^)'"]+?\.woff2)(?:\1)\)|url\((['"]?)(?:\./|\.\./|/)?(?:[^)'"]*?/)?fonts/([^)'"]+?\.woff2)(?:\3)\)"#,
+            r#"url\(['"]?(?:[^)'"]*?/)?fonts/([^)'"]+?\.woff2)['"]?\)"#,
         )
         .unwrap();
         out = re
             .replace_all(&out, |caps: &regex::Captures| {
                 let name = caps
-                    .get(2)
-                    .or_else(|| caps.get(4))
+                    .get(1)
                     .map(|m| m.as_str().to_string())
                     .unwrap_or_default();
                 let file = font_dir.join(&name);
@@ -195,4 +195,28 @@ pub fn export_generic_file(app: &AppHandle, payload: ExportFilePayload) -> Resul
         fs::write(&path, materialize_html(&html, payload.doc_dir.as_deref(), fonts.as_deref()))?;
     }
     Ok(pstr(&path))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // 回归：字体 url 正则曾含反向引用（Rust regex 不支持），解析即 panic，
+    // 配合 panic=abort 表现为点导出直接闪退。这里覆盖四种引号/路径写法。
+    #[test]
+    fn katex_font_urls_embed_as_data_uri() {
+        let dir = std::env::temp_dir().join(format!("plume-export-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("KaTeX_Test-Regular.woff2"), b"fake-woff2").unwrap();
+        let css = concat!(
+            "a{src:url(fonts/KaTeX_Test-Regular.woff2) format(\"woff2\");}",
+            "b{src:url(\"fonts/KaTeX_Test-Regular.woff2\");}",
+            "c{src:url('../fonts/KaTeX_Test-Regular.woff2');}",
+            "d{src:url(/fonts/KaTeX_Test-Regular.woff2);}",
+        );
+        let out = materialize_html(css, None, Some(&dir));
+        assert_eq!(out.matches("data:font/woff2;base64,").count(), 4);
+        assert!(!out.contains("fonts/KaTeX_Test"));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }
