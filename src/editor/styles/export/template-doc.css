@@ -1,0 +1,28 @@
+/* 模板 · 文档（默认）
+   沿用原来的网页文档观感：无衬线、标题带分隔线、不缩进。
+   适合说明文档、README、笔记。 */
+
+@media screen {
+  :root {
+    --export-size: 15.5px;
+    --export-lh: 1.78;
+    --export-measure: 760px;
+  }
+}
+
+/* 标题分隔线在屏幕和纸上都要有：这是这个模板的识别点 */
+h1, h2 {
+  border-bottom: 1px solid var(--border, #e5e7eb);
+  padding-bottom: 0.3em;
+}
+
+@media print {
+  :root {
+    --export-size: 11.5pt;
+    --export-lh: 1.72;
+    /* 36em ≈ 一行 36 个汉字，居中后左右各留出约 30mm */
+    --export-measure: 36em;
+    --export-para-gap: 0.8em;
+    --export-indent: 0em;
+  }
+}

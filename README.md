@@ -15,8 +15,10 @@ src/                        前端（Vite + Vue 3）
 ├─ editor/
 │  ├─ runtime.js            编辑器运行时（原 index.js 改造）：命令表、文档/导出/图片、
 │  │                        菜单页与设置面板等命令式弹层
+│  ├─ export-style.js       导出样式装配：主题 CSS 变量 + 公共层 + 版式模板
 │  ├─ live-preview.js …     CM6 编辑器内核（原样保留，与框架无关）
-│  └─ styles/               编辑器与外壳主题：CSS 变量 + 全量主题文件 + data-theme 切换
+│  └─ styles/               编辑器与外壳主题：CSS 变量 + 全量主题文件 + data-theme 切换；
+│                           导出排版在 styles/export/（公共层 + doc/book/paper 三套模板）
 └─ App.vue / main.js        组合根；启动顺序：installPlatform → Pinia → mount → initRuntime
 
 src-tauri/                  Rust 系统服务层
@@ -128,6 +130,39 @@ npm run dist
 
 - Node 22+、Rust stable（MSVC toolchain）、Visual Studio C++ 生成工具、WebView2 Runtime。
 - 本机 crates 走 rsproxy 镜像（`.cargo/config.toml`）。
+- **vcvars 不挂 Windows SDK 时的补救**：本机 `vcvars64.bat` 之后 `INCLUDE` 里可能只有 MSVC 头
+  （编译 C/C++ 依赖时报 `windows.h: No such file or directory`）。手工补上：
+
+  ```powershell
+  $sdk = "C:\Program Files (x86)\Windows Kits\10"
+  $env:INCLUDE = "$env:INCLUDE;$sdk\Include\10.0.26100.0\ucrt;$sdk\Include\10.0.26100.0\shared;$sdk\Include\10.0.26100.0\um;$sdk\Include\10.0.26100.0\winrt"
+  $env:LIB = "$env:LIB;$sdk\Lib\10.0.26100.0\ucrt\x64;$sdk\Lib\10.0.26100.0\um\x64"
+  ```
+
+## 导出排版（PDF / 长图 / HTML）
+
+导出样式分三层装配，入口是 `src/editor/export-style.js`：
+
+| 层 | 文件 | 作用 |
+|---|---|---|
+| 主题 | `src/editor/styles/themes/*.css` | 原样内联，导出页带 `data-theme`，配色与字体和编辑器一致 |
+| 公共层 | `src/editor/styles/export/base.css` | 元素样式、中文排版（`palt` 标点挤压、严格避头尾）与分页规则 |
+| 模板 | `src/editor/styles/export/template-{doc,book,paper}.css` | 尺寸与版式：文档 36em 无衬线 / 书籍 34em 衬线 + 首行缩进 + h1 另起页 / 论文 31em 两端对齐 |
+
+设置里的「导出排版 → 导出模板」切换。屏幕与纸张尺寸用 `@media screen` / `@media print` 分别声明，
+模板文件排在公共层之后，靠层叠压住默认值（顺序不能反）。
+
+约定：
+
+- PDF 走 `print` 模式：`night` / `gothic` 这类深色主题自动换成 `white` 配色（纸上印黑底没有意义）；
+  长图与 HTML 保留原主题。
+- `@media print` 里的 `@page` 只声明纸张大小，四边边距由 Rust 的 `PrintSettings` 决定
+  （WebView2 不采纳 CSS 边距），当前 A4 + 四边 20mm。
+- 正文宽度一律用 `em`（36em ≈ 一行 36 个汉字）。原来的 `max-width:760px` 在 A4 + 0.4in 边距下等于没生效，
+  会按纸宽铺满到 46 字一行。
+- 导出页在 `document.fonts.ready` 与图片解码完成后置 `window.__plumeExportReady`，Rust 侧轮询该标记
+  （8 秒兜底）后才 `PrintToPdf` / `CapturePreview`。只有 PDF 与长图会带上这段脚本，
+  交给用户的 HTML 交付物保持纯净（`readyScript: true` 才注入）。
 
 ## Markdown 标记的触发时机
 
@@ -221,4 +256,9 @@ MIT © 2026 LeftAndBlue，全文见 [LICENSE](LICENSE)。
   自检 215/220，通过项包含新增的 6 条触发断言，其余 5 项失败与本次改动前的基线完全一致
   （KaTeX 内嵌样式、隐藏窗口下的回车模拟、代码块圆角取样式、localStorage 草稿键，均为 dev 自检环境既有问题）。
 - 自检可在 dev 页面跑：`npm run dev` 后访问 `http://localhost:1420/?selftest=1`，结果面板在页面底部。
+- 导出排版（本次改动）：`npm run build` 通过；用 Vite SSR 直接调 `exportHtml` 跑了 5 组组合
+  （doc/screen/white、book/print/newsprint、paper/print/sepia、book/print/night、HTML 交付物），
+  确认 `data-theme` / `data-export-template` 正确、模板尺寸声明排在公共层之后（层叠生效）、
+  分页规则与 `pre-wrap` 都在、深色主题导出 PDF 退回 `white`、就绪脚本只在 PDF/长图出现。
+  `cargo check` 通过（本机需手工补 Windows SDK 的 INCLUDE/LIB，见「环境依赖」）。
 

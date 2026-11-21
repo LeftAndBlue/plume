@@ -62,6 +62,43 @@ fn wait(ms: u64) {
     pump_until(&channel::<()>().1, Duration::from_millis(ms));
 }
 
+/// 执行一段 JS 并取回结果。ExecuteScript 是异步的，必须一边等回调一边泵消息。
+fn eval_script(window: &WebviewWindow, script: &str, timeout: Duration) -> Option<String> {
+    let (tx, rx) = channel::<String>();
+    let wide_script = wide(script);
+    let _ = window.with_webview(move |webview| unsafe {
+        if let Ok(core) = webview.controller().CoreWebView2() {
+            let handler = ExecuteScriptCompletedHandler::create(Box::new(move |result, json| {
+                let _ = tx.send(if result.is_ok() { json } else { String::new() });
+                Ok(())
+            }));
+            let _ = core.ExecuteScript(PCWSTR(wide_script.as_ptr()), &handler);
+        }
+    });
+    pump_until(&rx, timeout)
+}
+
+/// 等导出页自报就绪：页面里的 READY_SCRIPT 在 `document.fonts.ready` 与图片解码完成后
+/// 置 `__plumeExportReady`。固定 sleep 的毛病是字体没到位就截，PDF 里断行、字宽都会偏。
+/// 8 秒兜底，页面里的脚本另有 6 秒兜底，正常情况下不会等满。
+fn wait_for_ready(window: &WebviewWindow) {
+    // 首帧与 KaTeX 样式应用至少需要一拍
+    wait(250);
+    let deadline = Instant::now() + Duration::from_secs(8);
+    while Instant::now() < deadline {
+        if let Some(v) = eval_script(
+            window,
+            "window.__plumeExportReady === 1",
+            Duration::from_secs(2),
+        ) {
+            if v.trim() == "true" {
+                return;
+            }
+        }
+        wait(120);
+    }
+}
+
 fn build_export_window(app: &AppHandle, html: &str) -> Result<(WebviewWindow, String), AnyErr> {
     let key = format!(
         "page-{}-{}",
@@ -98,12 +135,13 @@ fn make_webview_visible(window: &WebviewWindow) {
     });
 }
 
-/// 导出 PDF：A4、四边距 0.4in、保留背景色，与原 Electron printToPDF 参数一致。
+/// 导出 PDF：A4、四边距 20mm、保留背景色。
+/// 20mm 是按中文文档的常规版心给的；原来的 0.4in（10mm）四边太窄，纸感像网页截图。
 pub fn print_to_pdf(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyErr> {
     let (window, key) = build_export_window(app, html)?;
     make_webview_visible(&window);
-    // 等页面与 KaTeX/Mermaid 渲染（本地资源，固定等待）
-    wait(1800);
+    // 等页面、字体与 KaTeX/Mermaid 就绪（页面自报标记，见 READY_SCRIPT）
+    wait_for_ready(&window);
 
     let (tx, rx) = channel::<bool>();
     let out_wide = wide(&out.to_string_lossy());
@@ -126,10 +164,10 @@ pub fn print_to_pdf(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyEr
             let _ = settings.SetScaleFactor(1.0);
             let _ = settings.SetPageWidth(8.27);
             let _ = settings.SetPageHeight(11.69);
-            let _ = settings.SetMarginTop(0.4);
-            let _ = settings.SetMarginBottom(0.4);
-            let _ = settings.SetMarginLeft(0.4);
-            let _ = settings.SetMarginRight(0.4);
+            let _ = settings.SetMarginTop(0.79);
+            let _ = settings.SetMarginBottom(0.79);
+            let _ = settings.SetMarginLeft(0.79);
+            let _ = settings.SetMarginRight(0.79);
             let _ = settings.SetShouldPrintBackgrounds(true);
             let _ = settings.SetShouldPrintHeaderAndFooter(false);
         }
@@ -152,7 +190,7 @@ pub fn print_to_pdf(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyEr
 pub fn capture_png(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyErr> {
     let (window, key) = build_export_window(app, html)?;
     make_webview_visible(&window);
-    wait(1800);
+    wait_for_ready(&window);
 
     let (tx_h, rx_h) = channel::<String>();
     window.with_webview(move |webview| unsafe {

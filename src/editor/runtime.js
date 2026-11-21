@@ -2690,6 +2690,12 @@ async function openSettings() {
       field(t("settings.codeLineNumbers"), `<input data-k="codeLineNumbers" type="checkbox"${prefs.codeLineNumbers ? " checked" : ""}>`) +
       `<p class="settings-note">${t("settings.appearanceNote")}</p>` +
       `<button type="button" id="open-theme-store" class="settings-btn">${t("settings.openThemeStore")}</button>` +
+      `<p class="settings-group">${t("settings.exportGroup")}</p>` +
+      field(
+        t("settings.exportTemplate"),
+        `<select data-k="exportTemplate">${opt("doc", t("settings.exportTemplate.doc"), prefs.exportTemplate)}${opt("book", t("settings.exportTemplate.book"), prefs.exportTemplate)}${opt("paper", t("settings.exportTemplate.paper"), prefs.exportTemplate)}</select>`,
+      ) +
+      `<p class="settings-note">${t("settings.exportTemplateNote")}</p>` +
       `<p class="settings-group">${t("settings.spelling")}</p>` +
       field(t("settings.spellcheck"), `<input data-k="spellcheck" type="checkbox"${prefs.spellcheck ? " checked" : ""}>`) +
       `<div id="spell-list"><p class="settings-note">${t("settings.spellLoading")}</p></div>` +

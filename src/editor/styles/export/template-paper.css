@@ -1,0 +1,45 @@
+/* 模板 · 论文
+   窄栏、紧凑行距、两端对齐、首行缩进；表图字号略小。
+   适合稿件、报告、需要控制页数的正式文档。 */
+
+@media screen {
+  :root {
+    --export-size: 15px;
+    --export-lh: 1.7;
+    --export-measure: 720px;
+  }
+}
+
+@media print {
+  :root {
+    --export-size: 10.5pt;
+    --export-lh: 1.58;
+    --export-measure: 31em;
+    --export-para-gap: 0.3em;
+    --export-indent: 2em;
+  }
+
+  body { font-family: var(--font-serif) }
+
+  p {
+    text-align: justify;
+    text-justify: inter-ideograph;
+    /* 中文两端对齐时，最后一行仍靠左 */
+    text-align-last: left;
+  }
+
+  h1 { font-size: 1.55em; margin: 0 0 1.1em; text-align: center; border-bottom: none }
+  h2 { font-size: 1.2em; margin: 1.6em 0 0.7em; border-bottom: none }
+  h3 { font-size: 1.05em; margin: 1.3em 0 0.5em }
+
+  h1 + p, h2 + p, h3 + p, h4 + p, h5 + p, h6 + p,
+  blockquote + p, ul + p, ol + p, table + p, pre + p,
+  li p { text-indent: 0 }
+
+  table { font-size: 0.9em }
+  th, td { padding: 5px 8px }
+  aside.footnote { font-size: 0.8em }
+
+  a { color: inherit }
+  .toc { background: none; border-left: none }
+}

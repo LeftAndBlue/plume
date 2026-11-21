@@ -29,6 +29,8 @@ const DEFAULT_PREFS = {
   firstLineIndent: false,
   codeLineNumbers: true,
   spellcheck: false,
+  /** 导出排版模板：doc（文档）/ book（书籍）/ paper（论文），见 export-style.js */
+  exportTemplate: 'doc',
 };
 
 const DENSITY_MAP = {
@@ -151,6 +153,7 @@ export function applyAppearanceCommand(spec) {
   else if (key === 'indent') updateAppearance({ firstLineIndent: !now.firstLineIndent });
   else if (key === 'code-ln') updateAppearance({ codeLineNumbers: !now.codeLineNumbers });
   else if (key === 'spell') updateAppearance({ spellcheck: !now.spellcheck });
+  else if (key === 'export-style' && value) updateAppearance({ exportTemplate: value });
 }
 
 function applyAppearance() {

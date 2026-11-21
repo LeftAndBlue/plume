@@ -1,5 +1,6 @@
 import katexCss from 'katex/dist/katex.min.css?raw';
 import { ensureKatex, getKatex } from './inline-text.js';
+import { buildExportCss } from './export-style.js';
 import {
   isTableDelimiterRow,
   isTableRow,
@@ -390,55 +391,27 @@ export function renderMarkdown(md, inheritedRefs) {
   return out.join('\n');
 }
 
-const PRINT_CSS = `
-:root{--fg:#1f2430;--muted:#6b7280;--line:#e5e7eb;--accent:#3b6cf0;--code-bg:#f6f7f9;}
-*{box-sizing:border-box}
-body{margin:0;padding:48px 32px 72px;color:var(--fg);background:#fff;
- font-family:"Segoe UI","Microsoft YaHei",-apple-system,system-ui,sans-serif;
- font-size:15.5px;line-height:1.78;-webkit-font-smoothing:antialiased}
-main{max-width:760px;margin:0 auto}
-h1,h2,h3,h4,h5,h6{line-height:1.3;margin:1.6em 0 .6em;font-weight:600}
-h1{font-size:2em;border-bottom:1px solid var(--line);padding-bottom:.3em}
-h2{font-size:1.5em;border-bottom:1px solid var(--line);padding-bottom:.25em}
-h3{font-size:1.25em}h4{font-size:1.08em}h5,h6{font-size:1em;color:var(--muted)}
-p{margin:.85em 0}
-a{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(59,108,240,.3)}
-code{font-family:"Cascadia Code",Consolas,monospace;font-size:.9em;background:var(--code-bg);
- padding:.15em .38em;border-radius:4px}
-pre.code{background:var(--code-bg);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
- overflow:auto;margin:1.1em 0}
-pre.code code{background:none;padding:0;font-size:.88em;line-height:1.62}
-pre.mermaid{background:transparent;text-align:center}
-.mermaid-export{text-align:center;margin:1.1em 0}.mermaid-export svg{max-width:100%;height:auto}
-blockquote{margin:1.2em 0;padding:.2em 1em;border-left:3px solid var(--accent);color:var(--muted);
- background:rgba(59,108,240,.04)}
-.callout{margin:1.2em 0;padding:.75em 1em;border-left:4px solid var(--accent);border-radius:6px;background:rgba(59,108,240,.07)}
-.callout-warning{border-left-color:#d99a00;background:rgba(217,154,0,.08)}.callout-error,.callout-danger{border-left-color:#d44;background:rgba(221,68,68,.07)}
-.callout-title{font-weight:650;margin-bottom:.25em}.callout-body>:first-child{margin-top:0}.callout-body>:last-child{margin-bottom:0}
-mark{background:#fff0a6;padding:.08em .18em;border-radius:3px}sup,sub{line-height:0}
-kbd{display:inline-block;padding:.04em .38em;border:1px solid #c7ccd4;border-bottom-width:2px;border-radius:4px;
- background:var(--code-bg);font:.82em/1.35 "Cascadia Code",Consolas,monospace;white-space:nowrap}
-u{text-underline-offset:.16em}
-table{border-collapse:collapse;width:100%;margin:1.2em 0;font-size:.95em}
-th,td{border:1px solid var(--line);padding:8px 12px}
-th{background:#fafafa;font-weight:600}
-hr{border:none;border-top:1px solid var(--line);margin:2em 0}
-img{max-width:100%;border-radius:6px}
-ul,ol{padding-left:1.6em;margin:.8em 0}
-li{margin:.25em 0}
-li input[type=checkbox]{margin-right:.4em}
-.math-block{margin:1.2em 0;text-align:center;overflow:auto}
-.katex{font-size:1.02em}
-.toc{margin:1.2em 0;padding:.7em 1em;border-left:2px solid var(--line);background:var(--code-bg);
- border-radius:0 8px 8px 0;font-size:.93em}
-.toc-item{display:block;padding:.12em 0;color:var(--muted);text-decoration:none}
-.toc-item:hover{color:var(--accent);text-decoration:underline}
-.toc-h1{font-weight:600;color:var(--fg)}
-.toc-empty{color:var(--muted);font-size:.9em}
-@media print{body{padding:0}pre.code,blockquote,table,.toc{break-inside:avoid}}
-`;
+/**
+ * 导出页里等字体与图片就绪再置位：WebView2 生成 PDF/长图时按这个标记等待，
+ * 比「固定等 1.8 秒」可靠——字体没加载完就截，行宽和断行都会偏。
+ * 兜底 6 秒，避免字体 API 异常时导出窗口永远等下去。
+ */
+const READY_SCRIPT = `<script>
+(function () {
+  var done = function () { window.__plumeExportReady = 1; };
+  var fonts = document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve();
+  var imgs = [].slice.call(document.images).map(function (img) {
+    return img.decode ? img.decode().catch(function () {}) : Promise.resolve();
+  });
+  Promise.all([fonts].concat(imgs)).then(done, done);
+  setTimeout(done, 6000);
+})();
+</script>`;
 
-export function exportHtml(markdown, { title = '墨行 Markline', bare = false } = {}) {
+export function exportHtml(
+  markdown,
+  { title = 'Plume', bare = false, theme, template, mode = 'screen', readyScript = false } = {}
+) {
   const body = renderMarkdown(markdown);
   if (bare) {
     return `<!doctype html>
@@ -448,13 +421,16 @@ export function exportHtml(markdown, { title = '墨行 Markline', bare = false }
 ${body}
 </body></html>`;
   }
+  // 主题配色 + 公共排版层 + 版式模板，见 export-style.js
+  const style = buildExportCss({ theme, template, mode });
+  // 就绪标记只有 PDF/长图这种「由程序截取」的场景才需要，交到用户手上的 HTML 保持纯净
   return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8">
+<html lang="zh-CN" data-theme="${style.themeId}" data-export-template="${style.templateId}"><head><meta charset="utf-8">
 <title>${esc(title)}</title>
-<style>${PRINT_CSS}\n${katexCss}</style>
+<style>${style.css}\n${katexCss}</style>
 </head><body><main>
 ${body}
-</main></body></html>`;
+</main>${readyScript ? '\n' + READY_SCRIPT : ''}</body></html>`;
 }
 
 let exportMermaidPromise = null;

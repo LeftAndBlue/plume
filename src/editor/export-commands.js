@@ -5,9 +5,24 @@
 import { exportHtmlReady } from "./markdown-export.js";
 import { markdownToDocx } from "./docx-export.js";
 import { markdownToEpub, markdownToLatex, markdownToRtf } from "./text-export.js";
+import { currentThemeId, getAppearance } from "./theme.js";
 
 export function createExportCommands({ state, view, flash, browserDownload }) {
   const docText = () => view.state.doc.toString();
+
+  /**
+   * 导出的配色与版式取自当前设置：
+   * HTML / 长图按屏幕尺寸与主题（深色主题保留原色），PDF 走 print 模式
+   * （深色主题会自动退回浅色配色，纸上才可读）。
+   */
+  function exportOptions(mode, extra = {}) {
+    return {
+      theme: currentThemeId(),
+      template: getAppearance().exportTemplate || "doc",
+      mode,
+      ...extra,
+    };
+  }
 
   function exportBaseName() {
     return state.path
@@ -34,7 +49,7 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
 
   async function doExportHtml() {
     const name = exportBaseName() + ".html";
-    const html = await exportHtmlReady(docText(), { title: name });
+    const html = await exportHtmlReady(docText(), exportOptions("screen", { title: name }));
     if (window.studio) {
       const p = await window.studio.exportHtml(html, name, state.dir);
       if (p) flash("已导出 " + p.split(/[\\/]/).pop());
@@ -97,7 +112,10 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
       return;
     }
     const name = exportBaseName() + ".png";
-    const html = await exportHtmlReady(docText(), { title: name });
+    const html = await exportHtmlReady(
+      docText(),
+      exportOptions("screen", { title: name, readyScript: true }),
+    );
     try {
       const p = await window.studio.exportPng(html, name, state.dir);
       if (p) flash("已导出 " + p.split(/[\\/]/).pop());
@@ -112,7 +130,10 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
       return;
     }
     const name = exportBaseName() + ".pdf";
-    const html = await exportHtmlReady(docText(), { title: name });
+    const html = await exportHtmlReady(
+      docText(),
+      exportOptions("print", { title: name, readyScript: true }),
+    );
     const p = await window.studio.exportPdf(html, name, state.dir);
     if (p) flash("已导出 " + p.split(/[\\/]/).pop());
   }

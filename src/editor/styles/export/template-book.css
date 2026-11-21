@@ -1,0 +1,41 @@
+/* 模板 · 书籍
+   衬线、首行缩进两字、标题居中、一级标题另起一页。
+   颜色仍跟主题走（newsprint / sepia 会得到暖纸效果）。 */
+
+@media screen {
+  :root {
+    --export-size: 16.5px;
+    --export-lh: 1.9;
+    --export-measure: 34em;
+  }
+}
+
+@media print {
+  :root {
+    --export-size: 11.5pt;
+    --export-lh: 1.8;
+    /* 34em ≈ 一行 34 字，接近中文书籍的栏宽 */
+    --export-measure: 34em;
+    --export-para-gap: 0.35em;
+    --export-indent: 2em;
+    --export-h1-break: page;
+    --export-title-align: center;
+  }
+
+  /* 衬线：模板强制，主题只管配色 */
+  body { font-family: var(--font-serif) }
+
+  h1 { font-size: 1.7em; margin: 0 0 1.4em }
+  h2 { font-size: 1.3em; margin: 1.9em 0 0.9em }
+  h3 { font-size: 1.1em; margin: 1.5em 0 0.7em }
+  h1, h2, h3 { border-bottom: none }
+
+  /* 标题/列表/引用后的第一段不缩进，符合中文书排规则 */
+  h1 + p, h2 + p, h3 + p, h4 + p, h5 + p, h6 + p,
+  blockquote + p, ul + p, ol + p, table + p, pre + p,
+  li p, .callout p { text-indent: 0 }
+
+  a { color: inherit }
+
+  .toc { border-left: none; border-top: 1px solid var(--border); border-radius: 0; background: none }
+}
