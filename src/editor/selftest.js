@@ -714,11 +714,24 @@ export async function runSelfTest(view, ctx) {
   await scrollUntil('示意图', () => !!document.querySelector('.cm-image img'));
   const imgEl = document.querySelector('.cm-image img');
   ok('图片渲染为 <img>', !!imgEl, imgEl ? imgEl.naturalWidth + 'px 宽' : '未加载');
-  imgEl?.closest('.cm-image')?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+  const imgWrap = imgEl?.closest('.cm-image');
+  imgWrap?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
   const imageMenu = document.querySelector('.app-context');
   ok(
     '图片右键提供复制移动与删除',
     !!imageMenu && ['复制图片到配置目录', '移动图片到配置目录', '仅删除图片引用', '删除图片及源文件'].every((label) => imageMenu.querySelector(`[data-context-action="${label}"]`)),
+  );
+  ok(
+    '图片右键提供缩放、编辑与对齐选项',
+    !!imageMenu && ['缩放图片', '编辑缩放...', '对齐方式', '编辑图片语法'].every((label) => imageMenu.querySelector(`[data-context-action="${label}"]`)),
+  );
+  // 测试缩放二级子菜单展开
+  const scaleBtn = imageMenu?.querySelector('[data-context-action="缩放图片"]');
+  scaleBtn?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  const subMenu = document.querySelector('.sub-context');
+  ok(
+    '缩放二级菜单展开并包含预设比例',
+    !!subMenu && ['25%', '50%', '75%', '100%', '重置大小'].every((label) => subMenu.querySelector(`[data-context-action="${label}"]`)),
   );
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 

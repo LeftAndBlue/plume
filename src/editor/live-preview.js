@@ -402,7 +402,8 @@ function computeBlockDecos(state) {
               currentDocBase(),
               editing,
               spec.width,
-              spec.align
+              spec.align,
+              attr ? attr[0].trim() : ''
             ),
           }).range(line.from, line.to)
         );
@@ -535,7 +536,8 @@ function buildInline(view) {
         currentDocBase(),
         editing,
         brace ? brace.width : '',
-        brace ? brace.align : ''
+        brace ? brace.align : '',
+        brace ? brace.raw : ''
       ),
     });
     deco.push(d.range(from, end));

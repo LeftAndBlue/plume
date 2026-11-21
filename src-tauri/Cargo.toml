@@ -46,8 +46,8 @@ windows = { version = "0.62", features = [
 ] }
 
 [profile.release]
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 16
 strip = true
 # 桌面编辑器不是计算密集场景：opt-level="s" 按体积优化，配合 panic=abort
 # 去掉展开表，可执行文件明显更小，启动映射也更快。

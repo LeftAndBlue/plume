@@ -167,13 +167,13 @@ export class HrWidget extends WidgetType {
 
 /** 点开后在图片上方编辑整段图片语法，例如 `![](assets/a.png)`。光标离开就收起。 */
 
-function formatImageMd(alt, src, title, attrs) {
+export function formatImageMd(alt, src, title, attrs) {
   const quoted = title ? ` "${String(title).replace(/"/g, '\\"')}"` : '';
   const dest = /[\s()]/.test(src) ? `<${src}>` : src;
   return `![${alt || ''}](${dest}${quoted})${attrs || ''}`;
 }
 
-function parseImageMd(text) {
+export function parseImageMd(text) {
   const raw = String(text || '').trim();
   if (!raw) return null;
   const m = /^!\[([^\]]*)\]\(([\s\S]*?)\)\s*(\{[^{}]*\})?\s*$/.exec(raw);
@@ -208,7 +208,7 @@ export const editingImageField = StateField.define({
 });
 
 export class ImageWidget extends WidgetType {
-  constructor(src, alt, title, from, to, inline, base, editing = false, width = '', align = '') {
+  constructor(src, alt, title, from, to, inline, base, editing = false, width = '', align = '', attrs = '') {
     super();
     this.src = src;
     this.alt = alt;
@@ -221,6 +221,7 @@ export class ImageWidget extends WidgetType {
     this.editing = !!editing;
     this.width = width || '';
     this.align = align || '';
+    this.attrs = attrs || '';
   }
   eq(other) {
     return (
@@ -233,7 +234,8 @@ export class ImageWidget extends WidgetType {
       other.base === this.base &&
       other.editing === this.editing &&
       other.width === this.width &&
-      other.align === this.align
+      other.align === this.align &&
+      other.attrs === this.attrs
     );
   }
   toDOM(view) {
@@ -247,6 +249,9 @@ export class ImageWidget extends WidgetType {
     wrap.dataset.markdownSrc = this.src;
     wrap.dataset.from = String(this.from);
     wrap.dataset.to = String(this.to);
+    wrap.dataset.width = this.width;
+    wrap.dataset.align = this.align;
+    wrap.dataset.attrs = this.attrs;
     const img = document.createElement('img');
     img.src = url;
     img.alt = this.alt || '';
@@ -259,7 +264,7 @@ export class ImageWidget extends WidgetType {
       img.remove();
       const ph = document.createElement('span');
       ph.className = 'cm-image-broken';
-      ph.textContent = '无法加载图片：' + formatImageMd(this.alt, this.src, this.title);
+      ph.textContent = '无法加载图片：' + formatImageMd(this.alt, this.src, this.title, this.attrs);
       ph.title = url;
       wrap.appendChild(ph);
     });
@@ -269,7 +274,11 @@ export class ImageWidget extends WidgetType {
       const input = document.createElement('input');
       input.type = 'text';
       input.className = 'cm-image-url';
-      const original = formatImageMd(this.alt, this.src, this.title);
+      const attrParts = [];
+      if (this.width) attrParts.push(`width=${this.width}`);
+      if (this.align) attrParts.push(`align=${this.align}`);
+      const fallbackAttrs = attrParts.length ? `{${attrParts.join(' ')}}` : '';
+      const original = formatImageMd(this.alt, this.src, this.title, this.attrs || fallbackAttrs);
       input.value = original;
       input.spellcheck = false;
       input.setAttribute('aria-label', '图片语法');
@@ -355,6 +364,7 @@ export class ImageWidget extends WidgetType {
 
     wrap.addEventListener('mousedown', (e) => {
       if (e.target.closest && e.target.closest('.cm-image-url')) return;
+      if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
       if (this.editing) return;

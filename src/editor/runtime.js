@@ -99,7 +99,10 @@ import {
 import {
   blinkLine,
   editingImageField,
+  formatImageMd,
+  parseImageMd,
   setDocBase,
+  setEditingImage,
   setLocalUrlConverter,
 } from "./widgets.js";
 import {
@@ -110,7 +113,7 @@ import {
   setAlign,
 } from "./table-model.js";
 import { cancelCellEditor, editTable } from "./table-edit.js";
-import { normalizeMarkdownText } from "./rich-doc.js";
+import { normalizeMarkdownText, parseImageAttrs } from "./rich-doc.js";
 import { useShellStore } from "../stores/shell.js";
 import { docBaseUrl, isTauri, localFileUrl } from "../platform/studio.js";
 
@@ -910,11 +913,12 @@ function samePath(a, b) {
   );
 }
 
-async function askText(title, initial = "") {
+async function askText(title, initial = "", fieldLabel = "名称", placeholder = "") {
   return new Promise((resolve) => {
+    const ph = placeholder ? ` placeholder="${String(placeholder).replace(/"/g, "&quot;")}"` : "";
     openSheet(
       title,
-      `<label class="settings-row"><span>名称</span><input id="ask-text-value" type="text" value="${String(initial).replace(/"/g, "&quot;")}"></label>` +
+      `<label class="settings-row"><span>${String(fieldLabel).replace(/</g, "&lt;")}</span><input id="ask-text-value" type="text"${ph} value="${String(initial).replace(/"/g, "&quot;")}"></label>` +
         `<div class="settings-actions"><button id="ask-text-ok" class="settings-btn">确定</button><button id="ask-text-cancel" class="settings-btn">取消</button></div>`,
     );
     const input = document.getElementById("ask-text-value");
@@ -922,10 +926,10 @@ async function askText(title, initial = "") {
       closeSettings();
       resolve(value);
     };
-    document.getElementById("ask-text-ok")?.addEventListener("click", () => finish(input.value.trim() || null), { once: true });
+    document.getElementById("ask-text-ok")?.addEventListener("click", () => finish(input ? input.value.trim() : null), { once: true });
     document.getElementById("ask-text-cancel")?.addEventListener("click", () => finish(null), { once: true });
     input?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") finish(input.value.trim() || null);
+      if (e.key === "Enter") finish(input ? input.value.trim() : null);
       if (e.key === "Escape") finish(null);
     });
     input?.focus();
@@ -1033,48 +1037,129 @@ function showContextMenu(event, items) {
   event.preventDefault();
   event.stopPropagation();
   closeActiveContextMenu();
-  const menu = document.createElement("div");
-  menu.className = "ft-context app-context";
-  menu.setAttribute("role", "menu");
+  const openMenus = [];
   const close = () => {
-    menu.remove();
+    for (const m of openMenus) m.remove();
+    openMenus.length = 0;
     document.removeEventListener("mousedown", outside, true);
     document.removeEventListener("keydown", keys, true);
     window.removeEventListener("resize", close);
     if (closeActiveContextMenu === close) closeActiveContextMenu = () => {};
   };
-  const outside = (e) => { if (!menu.contains(e.target)) close(); };
-  const keys = (e) => { if (e.key === "Escape") { e.preventDefault(); close(); } };
-  for (const item of items.filter(Boolean)) {
-    if (item.separator) {
-      const sep = document.createElement("div");
-      sep.className = "context-sep";
-      menu.appendChild(sep);
-      continue;
-    }
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = item.label;
-    btn.disabled = !!item.disabled;
-    btn.dataset.contextAction = item.label;
-    if (item.danger) btn.classList.add("is-danger");
-    btn.addEventListener("click", () => {
+  const outside = (e) => {
+    if (!openMenus.some((m) => m.contains(e.target))) close();
+  };
+  const keys = (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
       close();
-      Promise.resolve(item.action?.()).catch((err) => flash("操作失败：" + (err?.message || err)));
-    });
-    menu.appendChild(btn);
+    }
+  };
+
+  function createMenu(menuItems, isSubmenu = false) {
+    const menu = document.createElement("div");
+    menu.className = "ft-context app-context" + (isSubmenu ? " sub-context" : "");
+    menu.setAttribute("role", "menu");
+    openMenus.push(menu);
+
+    let activeChildMenu = null;
+    let hoverTimer = null;
+
+    for (const item of menuItems.filter(Boolean)) {
+      if (item.separator) {
+        const sep = document.createElement("div");
+        sep.className = "context-sep";
+        menu.appendChild(sep);
+        continue;
+      }
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.disabled = !!item.disabled;
+      btn.dataset.contextAction = item.label;
+      if (item.danger) btn.classList.add("is-danger");
+
+      const labelWrap = document.createElement("span");
+      labelWrap.className = "context-label";
+      if (item.checked) {
+        const check = document.createElement("span");
+        check.className = "context-check";
+        check.textContent = "✓ ";
+        labelWrap.appendChild(check);
+      }
+      labelWrap.appendChild(document.createTextNode(item.label));
+      btn.appendChild(labelWrap);
+
+      const hasChildren = Array.isArray(item.children) && item.children.length > 0;
+      if (hasChildren) {
+        const arrow = document.createElement("span");
+        arrow.className = "context-arrow";
+        arrow.textContent = "›";
+        btn.appendChild(arrow);
+
+        const openSubmenu = () => {
+          if (activeChildMenu) {
+            const idx = openMenus.indexOf(activeChildMenu);
+            if (idx >= 0) openMenus.splice(idx, 1);
+            activeChildMenu.remove();
+            activeChildMenu = null;
+          }
+          const sub = createMenu(item.children, true);
+          document.body.appendChild(sub);
+          const btnRect = btn.getBoundingClientRect();
+          let left = btnRect.right + 2;
+          let top = btnRect.top - 4;
+          const subRect = sub.getBoundingClientRect();
+          if (left + subRect.width > window.innerWidth - 8) {
+            left = Math.max(8, btnRect.left - subRect.width - 2);
+          }
+          if (top + subRect.height > window.innerHeight - 8) {
+            top = Math.max(8, window.innerHeight - subRect.height - 8);
+          }
+          sub.style.left = left + "px";
+          sub.style.top = top + "px";
+          activeChildMenu = sub;
+        };
+
+        btn.addEventListener("mouseenter", () => {
+          clearTimeout(hoverTimer);
+          hoverTimer = setTimeout(openSubmenu, 120);
+        });
+        btn.addEventListener("click", (e) => {
+          e.stopPropagation();
+          openSubmenu();
+        });
+      } else {
+        btn.addEventListener("mouseenter", () => {
+          clearTimeout(hoverTimer);
+          if (activeChildMenu) {
+            const idx = openMenus.indexOf(activeChildMenu);
+            if (idx >= 0) openMenus.splice(idx, 1);
+            activeChildMenu.remove();
+            activeChildMenu = null;
+          }
+        });
+        btn.addEventListener("click", () => {
+          close();
+          Promise.resolve(item.action?.()).catch((err) => flash("操作失败：" + (err?.message || err)));
+        });
+      }
+      menu.appendChild(btn);
+    }
+    return menu;
   }
-  document.body.appendChild(menu);
-  const rect = menu.getBoundingClientRect();
-  menu.style.left = Math.max(6, Math.min(event.clientX, window.innerWidth - rect.width - 8)) + "px";
-  menu.style.top = Math.max(6, Math.min(event.clientY, window.innerHeight - rect.height - 8)) + "px";
+
+  const mainMenu = createMenu(items);
+  document.body.appendChild(mainMenu);
+  const rect = mainMenu.getBoundingClientRect();
+  mainMenu.style.left = Math.max(6, Math.min(event.clientX, window.innerWidth - rect.width - 8)) + "px";
+  mainMenu.style.top = Math.max(6, Math.min(event.clientY, window.innerHeight - rect.height - 8)) + "px";
   closeActiveContextMenu = close;
   setTimeout(() => {
     document.addEventListener("mousedown", outside, true);
     document.addEventListener("keydown", keys, true);
     window.addEventListener("resize", close);
   }, 0);
-  return menu;
+  return mainMenu;
 }
 
 async function openTreePath(path) {
@@ -1575,10 +1660,111 @@ function tableContextItems(wrap, cell) {
 }
 
 function imageSourceRange(el) {
-  const from = Number(el.dataset.from);
-  const to = Number(el.dataset.to);
-  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to > view.state.doc.length) return null;
-  return { from, to, src: el.dataset.markdownSrc || "", raw: view.state.doc.sliceString(from, to) };
+  let from = Number(el.dataset.from);
+  let to = Number(el.dataset.to);
+  const doc = view.state.doc;
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || to > doc.length) return null;
+  let raw = doc.sliceString(from, to);
+  if (!raw.startsWith("![")) {
+    const line = doc.lineAt(Math.min(from, doc.length));
+    const idx = line.text.indexOf("![");
+    if (idx >= 0) {
+      from = line.from + idx;
+      const m = /^!\[([^\]]*)\]\(([\s\S]*?)\)\s*(\{[^{}]*\})?/.exec(line.text.slice(idx));
+      if (m) {
+        to = from + m[0].length;
+        raw = doc.sliceString(from, to);
+      }
+    }
+  } else {
+    const trailing = doc.sliceString(to, Math.min(doc.length, to + 120));
+    const braceMatch = /^\{[^{}\n]*\}/.exec(trailing);
+    if (braceMatch && !raw.includes("{")) {
+      to += braceMatch[0].length;
+      raw = doc.sliceString(from, to);
+    }
+  }
+  return { from, to, src: el.dataset.markdownSrc || "", raw };
+}
+
+function getImageAttrsFromEl(el) {
+  const info = imageSourceRange(el);
+  if (!info) return { width: el.dataset.width || "", align: el.dataset.align || "" };
+  const attrMatch = /\{([^{}]*)\}\s*$/.exec(info.raw);
+  const parsed = attrMatch ? parseImageAttrs(attrMatch[1]) : { width: "", align: "" };
+  return {
+    width: parsed.width || el.dataset.width || "",
+    align: parsed.align || el.dataset.align || "",
+  };
+}
+
+function updateImageAttributes(el, { width, align }) {
+  const info = imageSourceRange(el);
+  if (!info || !info.raw.includes("![")) return flash("图片源码位置已变化，请重试");
+  const parsed = parseImageMd(info.raw);
+  if (!parsed) return flash("无法解析图片语法");
+
+  const currentAttrs = parsed.attrs
+    ? parseImageAttrs(parsed.attrs.replace(/^\{|\}$/g, ""))
+    : { width: "", align: "" };
+
+  const newWidth = width !== undefined ? width : currentAttrs.width;
+  const newAlign = align !== undefined ? align : currentAttrs.align;
+
+  const attrParts = [];
+  if (newWidth) attrParts.push(`width=${newWidth}`);
+  if (newAlign) attrParts.push(`align=${newAlign}`);
+  const attrs = attrParts.length ? `{${attrParts.join(" ")}}` : "";
+
+  const insert = formatImageMd(parsed.alt, parsed.src, parsed.title, attrs);
+  if (insert === info.raw) return true;
+
+  view.dispatch({
+    changes: { from: info.from, to: info.to, insert },
+    selection: { anchor: info.from },
+  });
+  return true;
+}
+
+function updateImageScale(el, width) {
+  const ok = updateImageAttributes(el, { width });
+  if (ok) flash(width ? `已调整图片尺寸为 ${width}` : "已恢复图片原始尺寸");
+}
+
+function updateImageAlign(el, align) {
+  const ok = updateImageAttributes(el, { align });
+  const names = { "": "默认", left: "靠左", center: "居中", right: "靠右" };
+  if (ok) flash(`已调整图片对齐为${names[align] || align}`);
+}
+
+async function promptCustomImageScale(el, currentWidth) {
+  const result = await askText("编辑图片缩放", currentWidth || "100%", "缩放比例", "例如 50%、80% 或 400px");
+  if (result === null) return;
+  let val = result.trim();
+  if (!val || val === "auto" || val === "0") {
+    updateImageScale(el, "");
+    return;
+  }
+  if (/^\d+(\.\d+)?$/.test(val)) {
+    val = val + "px";
+  }
+  if (!/^(\d+(\.\d+)?(%|px|em|rem|vw|vh)?)$/i.test(val)) {
+    flash("格式不正确，请输入如 50% 或 400px");
+    return;
+  }
+  updateImageScale(el, val);
+}
+
+function editImageSyntax(el) {
+  const info = imageSourceRange(el);
+  if (!info) return flash("图片源码位置已变化，请重试");
+  const anchor = Math.min(info.from + 2, Math.max(info.from, info.to - 1));
+  view.dispatch({
+    selection: { anchor },
+    effects: setEditingImage.of({ from: info.from, to: info.to }),
+    scrollIntoView: true,
+  });
+  view.focus();
 }
 
 function removeImageReference(el) {
@@ -1615,7 +1801,38 @@ async function deleteImageAndFile(el) {
 
 function imageContextItems(el) {
   const local = state.path && window.studio;
+  const { width: currentWidth, align: currentAlign } = getImageAttrsFromEl(el);
+
   return [
+    {
+      label: "缩放图片",
+      children: [
+        { label: "25%", checked: currentWidth === "25%", action: () => updateImageScale(el, "25%") },
+        { label: "50%", checked: currentWidth === "50%", action: () => updateImageScale(el, "50%") },
+        { label: "75%", checked: currentWidth === "75%", action: () => updateImageScale(el, "75%") },
+        { label: "100%", checked: currentWidth === "100%", action: () => updateImageScale(el, "100%") },
+        { separator: true },
+        {
+          label: currentWidth && !["25%", "50%", "75%", "100%"].includes(currentWidth)
+            ? `自定义缩放 (${currentWidth})...`
+            : "自定义缩放...",
+          action: () => promptCustomImageScale(el, currentWidth),
+        },
+        { label: "重置大小", checked: !currentWidth, action: () => updateImageScale(el, "") },
+      ],
+    },
+    { label: "编辑缩放...", action: () => promptCustomImageScale(el, currentWidth) },
+    {
+      label: "对齐方式",
+      children: [
+        { label: "默认", checked: !currentAlign, action: () => updateImageAlign(el, "") },
+        { label: "居中", checked: currentAlign === "center", action: () => updateImageAlign(el, "center") },
+        { label: "靠左", checked: currentAlign === "left", action: () => updateImageAlign(el, "left") },
+        { label: "靠右", checked: currentAlign === "right", action: () => updateImageAlign(el, "right") },
+      ],
+    },
+    { label: "编辑图片语法", action: () => editImageSyntax(el) },
+    { separator: true },
     { label: "复制图片地址", action: () => copyText(el.dataset.markdownSrc || "", "图片地址已复制") },
     { label: "复制图片到配置目录", disabled: !local, action: () => relocateImage(el, false) },
     { label: "移动图片到配置目录", disabled: !local, action: () => relocateImage(el, true) },
