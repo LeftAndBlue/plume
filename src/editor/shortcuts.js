@@ -32,6 +32,7 @@ const SHORTCUTS = [
       { label: '重做', cmd: 'redo', keys: 'Ctrl+Shift+Z' },
       { label: '剪切', cmd: 'cut', keys: 'Ctrl+X' },
       { label: '复制', cmd: 'copy', keys: 'Ctrl+C' },
+      { label: '复制为 Markdown', cmd: 'copy-markdown', keys: 'Ctrl+Shift+C' },
       { label: '粘贴', cmd: 'paste', keys: 'Ctrl+V' },
       { label: '粘贴为纯文本', cmd: 'paste-plain', keys: 'Ctrl+Shift+V' },
       { label: '查找', cmd: 'find', keys: 'Ctrl+F' },

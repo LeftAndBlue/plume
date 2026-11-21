@@ -1,4 +1,5 @@
 import { EditorView, keymap } from '@codemirror/view';
+import { EditorState, EditorSelection } from '@codemirror/state';
 import { openSearchPanel, closeSearchPanel } from '@codemirror/search';
 import { undo } from '@codemirror/commands';
 import { NATIVE_KEYS, declaredShortcuts, normAccel } from './shortcuts.js';
@@ -8,6 +9,7 @@ import { blockDecorationStats, setSourceMode } from './live-preview.js';
 import { deletePair, exitQuoteOnBackspace, handleInput, navigateFence, protectFenceDelete } from './pairing.js';
 import { getCodeFences, isFenceDraft } from './code-fences.js';
 import { escapeXml, frontMatterEnd, splitMarkdownLines } from './markdown-source.js';
+import { renderSelectionForClipboard, resolveImageForClipboard, htmlToPlainText } from './clipboard.js';
 import { i18n } from '../i18n.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -1210,8 +1212,33 @@ export async function runSelfTest(view, ctx) {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   view.contentDOM.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
   const editorMenu = document.querySelector('.app-context');
-  ok('编辑区右键包含剪贴板与格式操作', !!editorMenu && ['剪切', '复制', '粘贴为纯文本', '加粗', '插入表格'].every((label) => editorMenu.querySelector(`[data-context-action="${label}"]`)));
+  ok('编辑区右键包含剪贴板与格式操作', !!editorMenu && ['剪切', '复制', '复制为 Markdown', '粘贴为纯文本', '加粗', '插入表格'].every((label) => editorMenu.querySelector(`[data-context-action="${label}"]`)));
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+
+  // 剪贴板富文本与渲染后纯文本断言
+  const testStateInline = EditorState.create({
+    doc: 'A **boy** and a *girl*',
+    selection: EditorSelection.single(0, 9), // 'A **boy**' (行内部分选区)
+  });
+  const resInline = renderSelectionForClipboard(testStateInline);
+  ok('行内部分选区复制输出行内富文本与无标记纯文本', resInline.plain === 'A boy' && resInline.html === 'A <strong>boy</strong>', JSON.stringify(resInline));
+
+  const testStateFence = EditorState.create({
+    doc: '```js\nconst answer = 42;\n```',
+    selection: EditorSelection.single(0, 26),
+  });
+  const resFence = renderSelectionForClipboard(testStateFence);
+  ok('代码块复制剥掉代码围栏输出pre/code与纯代码', resFence.plain.trim() === 'const answer = 42;' && !resFence.plain.includes('```') && resFence.html.includes('<pre class="code">'), JSON.stringify(resFence));
+
+  const testStateHeading = EditorState.create({
+    doc: '## 标题二',
+    selection: EditorSelection.single(0, 6),
+  });
+  const resHeading = renderSelectionForClipboard(testStateHeading);
+  ok('标题整行复制输出无井号纯文本与h2', resHeading.plain === '标题二' && resHeading.html.includes('<h2>标题二</h2>'), JSON.stringify(resHeading));
+
+  const imgResolved = resolveImageForClipboard('./assets/demo.png', 'C:\\docs');
+  ok('剪贴板图片相对路径解析为标准file协议URL', imgResolved === 'file:///C:/docs/assets/demo.png', imgResolved);
 
   // 页内锚点：按导出时的 slug 规则跳标题（真开系统浏览器在自检里没法验，也不能验）
   const beforeJump = view.scrollDOM.scrollTop;

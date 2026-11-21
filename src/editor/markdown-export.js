@@ -20,14 +20,14 @@ function texToHtml(tex, displayMode) {
   }
 }
 
-const esc = (s) =>
+export const esc = (s) =>
   String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const unesc = (s) =>
+export const unesc = (s) =>
   String(s).replace(/&(amp|lt|gt|quot|#39);/g, (entity) => ({
     '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#39;': "'",
   }[entity]));
 
-function inline(text, refs = new Map()) {
+export function inline(text, refs = new Map(), resolveImageSrc = null) {
   const codes = [];
   let s = text.replace(/<br\s*\/?\s*>/gi, '\u0001').replace(/`([^`]+)`/g, (_, c) => {
     codes.push(c);
@@ -56,7 +56,8 @@ function inline(text, refs = new Map()) {
               ? 'display:block;margin-right:auto'
               : '';
       const style = [size ? `width:${esc(size)}` : '', place].filter(Boolean).join(';');
-      return `<img src="${src.trim()}" alt="${alt}"${t ? ` title="${t}"` : ''}${style ? ` style="${style}"` : ''}>`;
+      const resolved = typeof resolveImageSrc === 'function' ? resolveImageSrc(src.trim()) : src.trim();
+      return `<img src="${resolved}" alt="${alt}"${t ? ` title="${t}"` : ''}${style ? ` style="${style}"` : ''}>`;
     }
   );
   s = s.replace(/\[\^([^\]]+)\](?!:)/g, (_, id) => `<sup class="fn-ref"><a href="#fn-${esc(id)}">${esc(id)}</a></sup>`);
@@ -65,7 +66,9 @@ function inline(text, refs = new Map()) {
   });
   s = s.replace(/!\[([^\]]*)\]\[([^\]]*)\]/g, (whole, alt, label) => {
     const def = refs.get((label || alt).toLowerCase());
-    return def ? `<img src="${esc(def.href)}" alt="${alt}"${def.title ? ` title="${esc(def.title)}"` : ''}>` : whole;
+    if (!def) return whole;
+    const resolved = typeof resolveImageSrc === 'function' ? resolveImageSrc(def.href) : def.href;
+    return `<img src="${esc(resolved)}" alt="${alt}"${def.title ? ` title="${esc(def.title)}"` : ''}>`;
   });
   s = s.replace(/\[([^\]]+)\]\[([^\]]*)\]/g, (whole, txt, label) => {
     const def = refs.get((label || txt).toLowerCase());
@@ -134,7 +137,7 @@ function scanHeadings(lines) {
   return list;
 }
 
-function tocHtml(headings, refs) {
+function tocHtml(headings, refs, resolveImageSrc) {
   if (!headings.length) return '<nav class="toc"><span class="toc-empty">目录：文档里还没有标题</span></nav>';
   const min = headings.reduce((n, h) => Math.min(n, h.level), 6);
   return (
@@ -143,7 +146,7 @@ function tocHtml(headings, refs) {
       .map(
         (h) =>
           `<a class="toc-item toc-h${h.level}" style="padding-left:${(h.level - min) * 14}px" href="#${h.id}">${inline(
-            h.text, refs
+            h.text, refs, resolveImageSrc
           )}</a>`
       )
       .join('') +
@@ -162,7 +165,7 @@ function listMarker(line) {
   };
 }
 
-function renderNestedList(lines, start, refs) {
+function renderNestedList(lines, start, refs, resolveImageSrc) {
   const first = listMarker(lines[start]);
   const base = first.indent;
   const ordered = first.ordered;
@@ -173,7 +176,7 @@ function renderNestedList(lines, start, refs) {
     const marker = listMarker(lines[i]);
     if (!marker) {
       if (current && lines[i].trim() && /^\s+/.test(lines[i])) {
-        current.html += '<br>' + inline(lines[i].trim(), refs);
+        current.html += '<br>' + inline(lines[i].trim(), refs, resolveImageSrc);
         i++;
         continue;
       }
@@ -182,7 +185,7 @@ function renderNestedList(lines, start, refs) {
     if (marker.indent < base || (marker.indent === base && marker.ordered !== ordered)) break;
     if (marker.indent > base) {
       if (!current) break;
-      const child = renderNestedList(lines, i, refs);
+      const child = renderNestedList(lines, i, refs, resolveImageSrc);
       current.html += child.html;
       i = child.next;
       continue;
@@ -191,8 +194,8 @@ function renderNestedList(lines, start, refs) {
     const task = /^\[([ xX])\]\s+(.*)$/.exec(content);
     current = {
       html: task
-        ? `<input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''}> ${inline(task[2], refs)}`
-        : inline(content, refs),
+        ? `<input type="checkbox" disabled${task[1] !== ' ' ? ' checked' : ''}> ${inline(task[2], refs, resolveImageSrc)}`
+        : inline(content, refs, resolveImageSrc),
     };
     items.push(current);
     i++;
@@ -205,7 +208,7 @@ function renderNestedList(lines, start, refs) {
   };
 }
 
-export function renderMarkdown(md, inheritedRefs) {
+export function renderMarkdown(md, inheritedRefs, resolveImageSrc = null) {
   const lines = splitMarkdownLines(md);
   const out = [];
   const headings = scanHeadings(lines);
@@ -254,13 +257,13 @@ export function renderMarkdown(md, inheritedRefs) {
 
     const fn = /^\[\^([^\]]+)\]:[ \t]*(.*)$/.exec(line);
     if (fn) {
-      out.push(`<aside class="footnote" id="fn-${esc(fn[1])}"><sup>${esc(fn[1])}</sup> ${inline(fn[2], refs)}</aside>`);
+      out.push(`<aside class="footnote" id="fn-${esc(fn[1])}"><sup>${esc(fn[1])}</sup> ${inline(fn[2], refs, resolveImageSrc)}</aside>`);
       i++;
       continue;
     }
 
     if (isToc(line)) {
-      out.push(tocHtml(headings, refs));
+      out.push(tocHtml(headings, refs, resolveImageSrc));
       i++;
       continue;
     }
@@ -306,7 +309,7 @@ export function renderMarkdown(md, inheritedRefs) {
       const meta = headings[headingNo++];
       out.push(
         `<h${level}${meta ? ` id="${meta.id}"` : ''}>${inline(
-          line.replace(/^#{1,6}\s+/, '').replace(/\s*#*\s*$/, ''), refs
+          line.replace(/^#{1,6}\s+/, '').replace(/\s*#*\s*$/, ''), refs, resolveImageSrc
         )}</h${level}>`
       );
       i++;
@@ -331,14 +334,14 @@ export function renderMarkdown(md, inheritedRefs) {
       while (i < lines.length && isTableRow(lines[i], tableCols)) rows.push(parse(lines[i++]));
       out.push(
         '<table><thead><tr>' +
-          head.map((c, j) => `<th style="text-align:${aligns[j] || 'left'}">${inline(c, refs)}</th>`).join('') +
+          head.map((c, j) => `<th style="text-align:${aligns[j] || 'left'}">${inline(c, refs, resolveImageSrc)}</th>`).join('') +
           '</tr></thead><tbody>' +
           rows
             .map(
               (r) =>
                 '<tr>' +
                 head
-                  .map((_, j) => `<td style="text-align:${aligns[j] || 'left'}">${inline(r[j] || '', refs)}</td>`)
+                  .map((_, j) => `<td style="text-align:${aligns[j] || 'left'}">${inline(r[j] || '', refs, resolveImageSrc)}</td>`)
                   .join('') +
                 '</tr>'
             )
@@ -356,15 +359,15 @@ export function renderMarkdown(md, inheritedRefs) {
         const kind = callout[1].toLowerCase();
         const title = callout[2] || callout[1].toUpperCase();
         out.push(
-          `<aside class="callout callout-${esc(kind)}"><div class="callout-title">${inline(title, refs)}</div>` +
-            `<div class="callout-body">${renderMarkdown(callout[3], refs)}</div></aside>`
+          `<aside class="callout callout-${esc(kind)}"><div class="callout-title">${inline(title, refs, resolveImageSrc)}</div>` +
+            `<div class="callout-body">${renderMarkdown(callout[3], refs, resolveImageSrc)}</div></aside>`
         );
-      } else out.push('<blockquote>' + renderMarkdown(buf.join('\n'), refs) + '</blockquote>');
+      } else out.push('<blockquote>' + renderMarkdown(buf.join('\n'), refs, resolveImageSrc) + '</blockquote>');
       continue;
     }
 
     if (isList(line)) {
-      const list = renderNestedList(lines, i, refs);
+      const list = renderNestedList(lines, i, refs, resolveImageSrc);
       out.push(list.html);
       i = list.next;
       continue;
@@ -384,7 +387,7 @@ export function renderMarkdown(md, inheritedRefs) {
     ) {
       buf.push(lines[i++]);
     }
-    if (buf.length) out.push('<p>' + inline(buf.join('\n'), refs).replace(/\n/g, '<br>') + '</p>');
+    if (buf.length) out.push('<p>' + inline(buf.join('\n'), refs, resolveImageSrc).replace(/\n/g, '<br>') + '</p>');
     else i++;
   }
 

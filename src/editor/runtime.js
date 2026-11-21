@@ -68,6 +68,7 @@ import {
   selectCodeBlock,
 } from "./pairing.js";
 import { detectCode, pasteAsCodeBlock } from "./paste-code.js";
+import { renderSelectionForClipboard } from "./clipboard.js";
 import { createMenubar } from "./menubar.js";
 import { ACCEL, shortcutText } from "./shortcuts.js";
 import { slugify } from "./slugify.js";
@@ -369,22 +370,30 @@ const view = new EditorView({
             return false;
           },
           copy(event, v) {
-            const sel = v.state.selection.main;
-            if (sel.empty || !event.clipboardData) return false;
-            for (const block of getCodeFences(v.state)) {
-              if (isFenceDraft(block)) continue;
-              if (sel.from < block.from || sel.to > block.to) continue;
-              const cleanFrom = Math.max(sel.from, block.codeFrom);
-              const cleanTo = Math.min(sel.to, block.codeTo);
-              if (cleanTo <= cleanFrom) continue;
-              event.preventDefault();
-              event.clipboardData.setData(
-                "text/plain",
-                v.state.doc.sliceString(cleanFrom, cleanTo),
-              );
-              return true;
-            }
-            return false;
+            const sel = v.state.selection;
+            if (sel.main.empty || !event.clipboardData) return false;
+            const { html, plain } = renderSelectionForClipboard(v.state, state.dir);
+            if (!plain && !html) return false;
+            event.preventDefault();
+            event.clipboardData.setData("text/plain", plain);
+            event.clipboardData.setData("text/html", html);
+            return true;
+          },
+          cut(event, v) {
+            const sel = v.state.selection;
+            if (sel.main.empty || !event.clipboardData) return false;
+            const { html, plain } = renderSelectionForClipboard(v.state, state.dir);
+            if (!plain && !html) return false;
+            event.preventDefault();
+            event.clipboardData.setData("text/plain", plain);
+            event.clipboardData.setData("text/html", html);
+            v.dispatch(
+              v.state.changeByRange((r) => ({
+                changes: { from: r.from, to: r.to, insert: "" },
+                range: EditorSelection.cursor(r.from),
+              })),
+            );
+            return true;
           },
         }),
       ),
@@ -404,6 +413,7 @@ const view = new EditorView({
           // ``` + 回车：补出结尾围栏，光标停在中间（手不用离开键盘）
           // 代码块里 Ctrl+A 先选这块代码；已经全选再按一次才选整篇
           { key: "Mod-a", run: selectCodeBlock },
+          { key: "Mod-Shift-c", run: (v) => { copyMarkdownSelection(v); return true; } },
           { key: "Enter", run: fenceOnEnter },
           { key: "Enter", run: continueList },
           { key: "Enter", run: continueQuote },
@@ -1623,6 +1633,7 @@ function baseEditorContextItems() {
     { separator: true },
     { label: "剪切", disabled: empty, action: () => run("cut") },
     { label: "复制", disabled: empty, action: () => run("copy") },
+    { label: "复制为 Markdown", disabled: empty, action: () => run("copy-markdown") },
     { label: "粘贴", action: () => run("paste") },
     { label: "粘贴为纯文本", action: () => run("paste-plain") },
     { label: "全选", action: () => run("select-all") },
@@ -2936,6 +2947,7 @@ const commands = {
   h6: () => setHeading(6),
   p: () => setHeading(0),
   copy: () => copySelection(false),
+  "copy-markdown": () => copyMarkdownSelection(),
   cut: () => copySelection(true),
   paste: async () => {
     try {
@@ -2978,24 +2990,38 @@ const commands = {
 };
 
 /**
- * 复制 / 剪切走 clipboard API 而不是 execCommand：
- * execCommand('cut') 删的是 DOM，CM 的 state 不跟着变，下次重渲染字又回来了。
+ * 复制 / 剪切：写入渲染后 HTML + 渲染后纯文本。
  * 读写都过 state，删完必然一致。
  */
 async function copySelection(cut) {
   const { state: s } = view;
-  const parts = s.selection.ranges
-    .map((r) => s.sliceDoc(r.from, r.to))
-    .filter(Boolean);
-  if (!parts.length) {
+  if (s.selection.main.empty) {
+    flash("没有选中内容");
+    return;
+  }
+  const { html, plain } = renderSelectionForClipboard(s, state.dir);
+  if (!plain && !html) {
     flash("没有选中内容");
     return;
   }
   try {
-    await navigator.clipboard.writeText(parts.join("\n"));
+    if (window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+    } else {
+      await navigator.clipboard.writeText(plain);
+    }
   } catch {
-    flash("无法写入剪贴板");
-    return;
+    try {
+      await navigator.clipboard.writeText(plain);
+    } catch {
+      flash("无法写入剪贴板");
+      return;
+    }
   }
   if (cut) {
     view.dispatch(
@@ -3006,6 +3032,29 @@ async function copySelection(cut) {
     );
   }
   view.focus();
+}
+
+/**
+ * 复制为 Markdown 源码（Ctrl+Shift+C）。
+ */
+async function copyMarkdownSelection(v) {
+  const targetView = v || view;
+  const s = targetView.state;
+  const parts = s.selection.ranges
+    .map((r) => s.sliceDoc(r.from, r.to))
+    .filter(Boolean);
+  if (!parts.length) {
+    flash("没有选中内容");
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(parts.join("\n"));
+    flash("已复制为 Markdown");
+    return true;
+  } catch {
+    flash("无法写入剪贴板");
+    return false;
+  }
 }
 
 /** 去掉选中文本的行内标记（**、*、~~、`、[text](url) → text） */
