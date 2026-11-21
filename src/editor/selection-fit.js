@@ -11,6 +11,67 @@ const CODE_LINE = '.cm-line.cm-code-line:not(.cm-fence-open):not(.cm-fence-close
 // 坐标已经换算成文档空间，滚动不会改变结果。只有文档、视口或几何变化
 // 才需要重新查询代码行；连续拖动选区可以复用同一批盒子。
 const codeBandCache = new WeakMap();
+const lineBoxCache = new WeakMap();
+
+/**
+ * CM 的 rectanglesForRange 用「内容区第一条 .cm-line」的 padding 当作所有行的
+ * 左右边界。列表行的悬挂缩进也写在 padding-left 里，首行是列表时这个边界就
+ * 比正文偏右一截：软换行续行的高亮（左边界开放到整行）会从缩进处才开始画，
+ * 行首几个字看着像「选不中」。这里把开放到整行的边收回矩形所在行自己的文字边界。
+ */
+function lineBoxes(view) {
+  const cached = lineBoxCache.get(view);
+  if (cached) return cached;
+  const base = markerSpace(view);
+  const boxes = [];
+  for (const line of view.contentDOM.querySelectorAll('.cm-line')) {
+    const rect = line.getBoundingClientRect();
+    if (rect.height < 1) continue;
+    const style = getComputedStyle(line);
+    const borderL = parseFloat(style.borderLeftWidth) || 0;
+    const borderR = parseFloat(style.borderRightWidth) || 0;
+    const padL = parseFloat(style.paddingLeft) || 0;
+    const padR = parseFloat(style.paddingRight) || 0;
+    boxes.push({
+      top: (rect.top - base.top) / base.scaleY,
+      bottom: (rect.bottom - base.top) / base.scaleY,
+      left: (rect.left + borderL + padL - base.left) / base.scaleX,
+      right: (rect.right - borderR - padR - base.left) / base.scaleX,
+    });
+  }
+  boxes.sort((a, b) => a.top - b.top);
+  lineBoxCache.set(view, boxes);
+  return boxes;
+}
+
+function globalSides(view) {
+  const base = markerSpace(view);
+  const contentRect = view.contentDOM.getBoundingClientRect();
+  const first = view.contentDOM.querySelector('.cm-line');
+  const style = first && getComputedStyle(first);
+  const padL = style ? parseInt(style.paddingLeft) || 0 : 0;
+  const padR = style ? parseInt(style.paddingRight) || 0 : 0;
+  const indent = style ? Math.min(0, parseInt(style.textIndent) || 0) : 0;
+  return {
+    left: (contentRect.left + padL + indent - base.left) / base.scaleX,
+    right: (contentRect.right - padR - base.left) / base.scaleX,
+  };
+}
+
+function snapSides(marker, view) {
+  if (marker.width == null) return marker;
+  const sides = globalSides(view);
+  const openL = Math.abs(marker.left - sides.left) < 0.5;
+  const openR = Math.abs(marker.left + marker.width - sides.right) < 0.5;
+  if (!openL && !openR) return marker;
+  const mid = marker.top + marker.height / 2;
+  const box = lineBoxes(view).find((b) => b.top <= mid && b.bottom >= mid);
+  if (!box) return marker;
+  const left = openL ? box.left : marker.left;
+  const right = openR ? box.right : marker.left + marker.width;
+  if (right <= left) return marker;
+  return new RectangleMarker(marker.className, left, marker.top, right - left, marker.height);
+}
 
 function codeBands(view) {
   const cached = codeBandCache.get(view);
@@ -88,7 +149,7 @@ function fitSelectionMarkers(view) {
   for (const range of view.state.selection.ranges) {
     if (range.empty) continue;
     for (const marker of RectangleMarker.forRange(view, 'cm-selectionBackground', range)) {
-      pieces.push(...clipMarker(marker, bands));
+      pieces.push(...clipMarker(snapSides(marker, view), bands));
     }
   }
   return pieces;
@@ -113,6 +174,7 @@ export const codeSelectionFit = layer({
   update(update) {
     if (update.docChanged || update.viewportChanged || update.geometryChanged) {
       codeBandCache.delete(update.view);
+      lineBoxCache.delete(update.view);
       return true;
     }
     return update.selectionSet;
