@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Plume · Logo 重设计（字母版）</title>
+<style>
+  :root{
+    --bg:#0d131c; --card:#151e2a; --card2:#1b2634;
+    --line:#26344a; --txt:#e7eef7; --dim:#8b9bb0; --accent:#6fe3ce;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+       font-family:"Segoe UI","PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+       -webkit-font-smoothing:antialiased;padding:48px 40px 80px}
+  .wrap{max-width:1120px;margin:0 auto}
+  .eyebrow{font-size:12px;letter-spacing:.28em;color:var(--accent);text-transform:uppercase;margin-bottom:12px}
+  h1{font-size:38px;font-weight:650;letter-spacing:.02em;margin:0 0 14px}
+  .sub{color:var(--dim);font-size:15px;line-height:1.85;margin:0 0 8px;max-width:780px}
+  .sub b{color:var(--txt);font-weight:600}
+  h2{font-size:19px;font-weight:600;margin:52px 0 6px;letter-spacing:.02em}
+  h2 span{color:var(--dim);font-size:13px;font-weight:400;margin-left:10px}
+  .rule{height:1px;background:var(--line);margin:14px 0 24px}
+  .grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .swatch{height:248px;display:flex;align-items:center;justify-content:center;background:#eef2f6}
+  .swatch img{width:196px;height:196px;object-fit:contain}
+  .meta{padding:16px 18px 20px;border-top:1px solid var(--line)}
+  .tag{display:inline-block;font-size:11px;letter-spacing:.1em;color:var(--accent);
+       border:1px solid rgba(111,227,206,.35);border-radius:20px;padding:3px 10px;margin-bottom:10px}
+  .name{font-size:16px;font-weight:600;margin-bottom:6px}
+  .desc{font-size:12.5px;color:var(--dim);line-height:1.75}
+  .breakdown{display:grid;grid-template-columns:360px 1fr;gap:28px;align-items:center;
+             background:var(--card);border:1px solid var(--line);border-radius:14px;padding:30px}
+  .breakdown .shot{background:#eef2f6;border-radius:12px;padding:24px;display:flex;justify-content:center}
+  .breakdown .shot img{width:280px;height:280px}
+  .points{list-style:none;margin:0;padding:0}
+  .points li{display:flex;gap:14px;padding:13px 0;border-bottom:1px solid var(--line);font-size:13.5px;line-height:1.7}
+  .points li:last-child{border-bottom:0}
+  .points .k{flex:0 0 92px;color:var(--accent);font-weight:600;font-size:12px;letter-spacing:.06em;padding-top:2px}
+  .points .v{color:var(--dim)}
+  .points .v b{color:var(--txt);font-weight:600}
+  .sizes{display:flex;align-items:flex-end;gap:30px;background:var(--card);
+         border:1px solid var(--line);border-radius:14px;padding:28px 30px;flex-wrap:wrap}
+  .sizes .item{display:flex;flex-direction:column;align-items:center;gap:10px}
+  .sizes .item span{font-size:11px;color:var(--dim);letter-spacing:.08em}
+  .alt{display:grid;grid-template-columns:repeat(2,1fr);gap:18px}
+  .lockup{display:flex;align-items:center;gap:24px;background:#0c1c2e;
+          border:1px solid var(--line);border-radius:14px;padding:34px 40px}
+  .lockup img{width:76px;height:76px}
+  .lockup .word{font-size:52px;font-weight:300;letter-spacing:.06em;color:#eaf6ff}
+  .lockup .word b{font-weight:650}
+  .lockup .small{font-size:12px;color:#7f9bb2;letter-spacing:.22em;margin-top:8px}
+  .note{margin-top:44px;padding:20px 22px;background:var(--card2);border-left:3px solid var(--accent);
+        border-radius:0 10px 10px 0;font-size:13px;color:var(--dim);line-height:1.9}
+  .note b{color:var(--txt);font-weight:600}
+  code{background:#0b1420;padding:2px 6px;border-radius:4px;color:#9fe8d8;font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="eyebrow">Plume / Brand Refresh · Letter Edition</div>
+  <h1>字母版 Logo 提案</h1>
+  <p class="sub">放弃具象羽毛，改用<b>几何字母 P</b> 作为骨架。核心巧思是：<b>P 的内孔（负空间）本身就是一扇实时预览窗</b>——
+     左边是尚未渲染的 Markdown 源码 <code>#</code>，中间一根编辑光标，右边是已经渲染好的标题行。
+     一个字母同时讲清「Plume」「Markdown」「所见即所得」三件事。</p>
+  <p class="sub">笔画为 120 单位等宽几何构造（非字体），四边留白严格对称，品牌色沿用深蓝 → 青绿。</p>
+
+  <h2>三个方向 <span>concepts</span></h2>
+  <div class="rule"></div>
+  <div class="grid">
+    <div class="card">
+      <div class="swatch"><img src="letter-a.svg" alt="方案A"></div>
+      <div class="meta"><div class="tag">推荐 · 已落地</div>
+        <div class="name">A · P / 实时窗</div>
+        <div class="desc">负空间巧思。内孔即预览窗：<code>#</code> 源码、光标、渲染标题并置同框。概念最完整，缩小后主形仍是清晰的 P。</div></div>
+    </div>
+    <div class="card">
+      <div class="swatch"><img src="letter-b.svg" alt="方案B"></div>
+      <div class="meta"><div class="tag">最直白</div>
+        <div class="name">B · P / 双态</div>
+        <div class="desc">左右等大两个 P，左为源码线稿态、右为渲染实心态，中央分栏。一眼看懂「输入 → 成型」，但叙事偏图示。</div></div>
+    </div>
+    <div class="card">
+      <div class="swatch"><img src="letter-c.svg" alt="方案C"></div>
+      <div class="meta"><div class="tag">最克制</div>
+        <div class="name">C · P / 字标</div>
+        <div class="desc">只留一个实心 P，内孔一个 <code>#</code> 点明 Markdown，右侧光标点明实时输入。最安静，但「预览」的表达较弱。</div></div>
+    </div>
+  </div>
+
+  <h2>方案 A · 构造拆解 <span>how it reads</span></h2>
+  <div class="rule"></div>
+  <div class="breakdown">
+    <div class="shot"><img src="letter-a.svg" alt="放大图"></div>
+    <ul class="points">
+      <li><div class="k">字母 P</div><div class="v">Plume 首字母。<b>一根 120 宽的连续笔画</b>绕出碗部，转角圆、端头方，几何而非字体；四边留白各 207 单位，完全对称。</div></li>
+      <li><div class="k">内孔 / 左</div><div class="v">青绿色 <b>#</b> —— Markdown 最标志性的标题标记，代表尚未渲染的源码。</div></li>
+      <li><div class="k">内孔 / 中</div><div class="v">一根半透明<b>编辑光标</b>，顶端带 I-beam 横块，把窗口分成源码区与结果区。</div></li>
+      <li><div class="k">内孔 / 右</div><div class="v">一条<b>加粗标题行</b>加两行递减正文 —— 源码落地后的所见即所得结果。</div></li>
+      <li><div class="k">配色</div><div class="v">深墨方章 + 浅蓝→青绿笔画；<b>#</b> 用高饱和青绿单独提亮，视线自然落在「转换发生的位置」。</div></li>
+    </ul>
+  </div>
+
+  <h2>小尺寸辨识度 <span>legibility</span></h2>
+  <div class="rule"></div>
+  <div class="sizes">
+    <div class="item"><img src="app-128.png" width="128" height="128"><span>128 px</span></div>
+    <div class="item"><img src="app-64.png" width="64" height="64"><span>64 px</span></div>
+    <div class="item"><img src="app-32.png" width="32" height="32"><span>32 px</span></div>
+    <div class="item"><img src="app-16.png" width="16" height="16"><span>16 px</span></div>
+  </div>
+
+  <h2>配色变体 <span>variants</span></h2>
+  <div class="rule"></div>
+  <div class="alt">
+    <div class="card"><div class="swatch"><img src="app-icon.svg" alt="深墨版"></div>
+      <div class="meta"><div class="name">深墨方章（主图标）</div><div class="desc">Windows 任务栏 / 开始菜单 / 安装包默认。</div></div></div>
+    <div class="card"><div class="swatch"><img src="app-icon-light.svg" alt="净纸版"></div>
+      <div class="meta"><div class="name">净纸版（备选）</div><div class="desc">浅底 + 品牌色笔画，与浅色编辑器主题更贴。</div></div></div>
+  </div>
+
+  <h2>字标组合 <span>lockup</span></h2>
+  <div class="rule"></div>
+  <div class="lockup">
+    <img src="app-icon.svg" alt="mark">
+    <div>
+      <div class="word"><b>Plume</b></div>
+      <div class="small">WYSIWYG MARKDOWN EDITOR</div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>已落地：</b>方案 A 已生成全套应用图标（<code>src-tauri/icons/*</code>，含 ico / icns / 各尺寸 PNG），
+    并同步更新网页 favicon（<code>public/plume-icon.png</code> 与 <code>dist/plume-icon.png</code>）。
+    源文件在本目录，换用 B / C 或净纸版只需改一行渲染目标再跑一次 <code>npx tauri icon</code>。<br>
+    <b>未改动：</b><code>md.ico</code> / <code>md-icon-preview.png</code> 是 .md 文件关联用的文档图标，用途不同，保持原样。
+  </div>
+</div>
+</body>
+</html>

@@ -115,9 +115,12 @@ import {
   deleteTableRow,
   insertTableCol,
   insertTableRow,
+  moveTableCol,
+  moveTableRow,
   setAlign,
+  sortTableRows,
 } from "./table-model.js";
-import { cancelCellEditor, editTable } from "./table-edit.js";
+import { cancelCellEditor, commitCellEditor, editTable, formatTable } from "./table-edit.js";
 import { normalizeMarkdownText, parseImageAttrs } from "./rich-doc.js";
 import { useShellStore } from "../stores/shell.js";
 import { docBaseUrl, isTauri, localFileUrl } from "../platform/studio.js";
@@ -1038,6 +1041,30 @@ async function copyText(text, success = "已复制") {
   }
 }
 
+/** 右键菜单里的线性图标（stroke 用 currentColor，尺寸交给 CSS）。 */
+function menuIcon(kind) {
+  const paths = {
+    cut: '<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.1" y2="15.9"/><line x1="14.4" y1="14.4" x2="20" y2="20"/><line x1="8.1" y1="8.1" x2="12" y2="12"/>',
+    copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
+    paste:
+      '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
+    trash:
+      '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+    code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
+    link: '<path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.4"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.5 19.6"/>',
+  };
+  const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  el.setAttribute("viewBox", "0 0 24 24");
+  el.setAttribute("fill", "none");
+  el.setAttribute("stroke", "currentColor");
+  el.setAttribute("stroke-width", "1.7");
+  el.setAttribute("stroke-linecap", "round");
+  el.setAttribute("stroke-linejoin", "round");
+  el.setAttribute("aria-hidden", "true");
+  el.innerHTML = paths[kind] || "";
+  return el;
+}
+
 function showContextMenu(event, items) {
   event.preventDefault();
   event.stopPropagation();
@@ -1068,13 +1095,78 @@ function showContextMenu(event, items) {
     openMenus.push(menu);
 
     let activeChildMenu = null;
+    let activeChildAnchor = null; // 当前子菜单挂在哪个父条目上
     let hoverTimer = null;
+    let closeTimer = 0;
+
+    /** 收起当前二级菜单（只移除这一层，主菜单不动）。 */
+    const closeSubmenu = () => {
+      clearTimeout(closeTimer);
+      if (!activeChildMenu) return;
+      const idx = openMenus.indexOf(activeChildMenu);
+      if (idx >= 0) openMenus.splice(idx, 1);
+      activeChildMenu.remove();
+      activeChildMenu = null;
+      activeChildAnchor = null;
+    };
+
+    // 鼠标移出菜单就收起二级菜单；给 200ms 缓冲，方便斜着从父项移到子菜单里
+    menu.addEventListener("mouseleave", () => {
+      if (!activeChildMenu) return;
+      closeTimer = setTimeout(closeSubmenu, 200);
+    });
+    menu.addEventListener("mouseenter", () => clearTimeout(closeTimer));
+    // 停在菜单空白处（既不在父项也不在别的条目上）同样收起
+    menu.addEventListener("mouseover", (e) => {
+      if (!activeChildMenu || !activeChildAnchor) return;
+      if (activeChildAnchor.contains(e.target)) return;
+      closeSubmenu();
+    });
 
     for (const item of menuItems.filter(Boolean)) {
       if (item.separator) {
         const sep = document.createElement("div");
         sep.className = "context-sep";
         menu.appendChild(sep);
+        continue;
+      }
+      // 网格行：Typora 那种一排图标 / 一排按钮的面板，而不是一条条往下排
+      if (Array.isArray(item.grid)) {
+        const grid = document.createElement("div");
+        grid.className = "context-grid";
+        grid.style.gridTemplateColumns = `repeat(${item.cols || 4}, minmax(0, 1fr))`;
+        for (const tile of item.grid.filter(Boolean)) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "context-tile" + (tile.cls ? " " + tile.cls : "");
+          b.title = tile.title || tile.label || "";
+          b.dataset.contextAction = tile.label || tile.title || "";
+          b.disabled = !!tile.disabled;
+          if (tile.icon) b.appendChild(menuIcon(tile.icon));
+          if (tile.label) {
+            const text = document.createElement("span");
+            text.textContent = tile.label;
+            b.appendChild(text);
+          }
+          b.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+          });
+          // 移到图标/按钮格上，说明不是在挑二级菜单，顺手收起
+          b.addEventListener("mouseenter", () => {
+            clearTimeout(hoverTimer);
+            closeSubmenu();
+          });
+          b.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (b.disabled) return;
+            close();
+            tile.action?.();
+          });
+          grid.appendChild(b);
+        }
+        menu.appendChild(grid);
         continue;
       }
       const btn = document.createElement("button");
@@ -1094,6 +1186,14 @@ function showContextMenu(event, items) {
       labelWrap.appendChild(document.createTextNode(item.label));
       btn.appendChild(labelWrap);
 
+      // 快捷键提示右对齐（Typora 的菜单都带这个），没有就留空
+      if (item.accel) {
+        const accel = document.createElement("span");
+        accel.className = "context-accel";
+        accel.textContent = item.accel;
+        btn.appendChild(accel);
+      }
+
       const hasChildren = Array.isArray(item.children) && item.children.length > 0;
       if (hasChildren) {
         const arrow = document.createElement("span");
@@ -1102,17 +1202,12 @@ function showContextMenu(event, items) {
         btn.appendChild(arrow);
 
         const openSubmenu = () => {
-          if (activeChildMenu) {
-            const idx = openMenus.indexOf(activeChildMenu);
-            if (idx >= 0) openMenus.splice(idx, 1);
-            activeChildMenu.remove();
-            activeChildMenu = null;
-          }
+          closeSubmenu();
           const sub = createMenu(item.children, true);
           document.body.appendChild(sub);
           const btnRect = btn.getBoundingClientRect();
-          let left = btnRect.right + 2;
-          let top = btnRect.top - 4;
+          let left = btnRect.right + 4;
+          let top = btnRect.top - 6;
           const subRect = sub.getBoundingClientRect();
           if (left + subRect.width > window.innerWidth - 8) {
             left = Math.max(8, btnRect.left - subRect.width - 2);
@@ -1122,7 +1217,13 @@ function showContextMenu(event, items) {
           }
           sub.style.left = left + "px";
           sub.style.top = top + "px";
+          // 鼠标进了子菜单就取消父级的收起定时；离开子菜单再延迟收起
+          sub.addEventListener("mouseenter", () => clearTimeout(closeTimer));
+          sub.addEventListener("mouseleave", () => {
+            closeTimer = setTimeout(closeSubmenu, 200);
+          });
           activeChildMenu = sub;
+          activeChildAnchor = btn;
         };
 
         btn.addEventListener("mouseenter", () => {
@@ -1136,12 +1237,7 @@ function showContextMenu(event, items) {
       } else {
         btn.addEventListener("mouseenter", () => {
           clearTimeout(hoverTimer);
-          if (activeChildMenu) {
-            const idx = openMenus.indexOf(activeChildMenu);
-            if (idx >= 0) openMenus.splice(idx, 1);
-            activeChildMenu.remove();
-            activeChildMenu = null;
-          }
+          closeSubmenu();
         });
         btn.addEventListener("click", () => {
           close();
@@ -1156,8 +1252,11 @@ function showContextMenu(event, items) {
   const mainMenu = createMenu(items);
   document.body.appendChild(mainMenu);
   const rect = mainMenu.getBoundingClientRect();
-  mainMenu.style.left = Math.max(6, Math.min(event.clientX, window.innerWidth - rect.width - 8)) + "px";
-  mainMenu.style.top = Math.max(6, Math.min(event.clientY, window.innerHeight - rect.height - 8)) + "px";
+  // 右下各让 6px：菜单不贴着点击处（表格单元格）出现，视觉上留一道缝
+  const x = event.clientX + 6;
+  const y = event.clientY + 6;
+  mainMenu.style.left = Math.max(6, Math.min(x, window.innerWidth - rect.width - 8)) + "px";
+  mainMenu.style.top = Math.max(6, Math.min(y, window.innerHeight - rect.height - 8)) + "px";
   closeActiveContextMenu = close;
   setTimeout(() => {
     document.addEventListener("mousedown", outside, true);
@@ -1624,12 +1723,19 @@ function headingPosBySlug(slug) {
  * `#xxx` 是页内锚点，按标题跳过去，不往系统浏览器里丢；
  * 其余相对路径不做猜测（编辑器不负责当文件管理器），只提示一句。
  */
+/**
+ * 表格右键菜单：条目与顺序对齐 Typora（插入/移动/删除/复制/格式化/删表），
+ * 末尾额外保留「编辑表格源码」和按列排序——Typora 没有，但这里一直是入口。
+ * row 是视觉行号（0 = 表头），col 是列号。
+ */
 function tableContextItems(wrap, cell) {
   const info = cell?._cell;
   if (!info) return [];
   const lineNo = info.tableLine;
   const row = info.row;
   const col = info.col;
+  const lastRow = Math.max(0, (info.rows || 1) - 1);
+  const colCount = info.cols || 1;
   const act = (mutate) => () => editTable(view, lineNo, mutate);
   const copyTable = () => {
     const from = Number(wrap.dataset.from);
@@ -1641,26 +1747,91 @@ function tableContextItems(wrap, cell) {
     const to = Number(wrap.dataset.to);
     view.dispatch({ changes: { from, to, insert: "" }, selection: { anchor: from } });
   };
+  // 进源码：先把格子里的编辑提交掉，再把光标落到表格首行，之后就是普通文本编辑
+  const editSource = async () => {
+    await commitCellEditor();
+    if (lineNo < 1 || lineNo > view.state.doc.lines) return;
+    const line = view.state.doc.line(lineNo);
+    view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
+    view.focus();
+  };
+  const formatSource = () =>
+    formatTable(view, lineNo).then((ok) => flash(ok ? "表格源码已按列对齐" : "表格源码已经是整齐的"));
+
   return [
-    { label: "复制表格", action: copyTable },
+    {
+      label: "插入行",
+      children: [
+        {
+          label: "上方插入行",
+          disabled: row <= 0,
+          action: act((rows) => {
+            if (row <= 0) return false;
+            rows.splice(row + 1, 0, Array.from({ length: rows[0].length }, () => ""));
+          }),
+        },
+        { label: "下方插入行", accel: "Ctrl+Enter", action: act((rows) => insertTableRow(rows, row)) },
+      ],
+    },
+    {
+      label: "插入列",
+      children: [
+        {
+          label: "左侧插入列",
+          action: act((rows) => {
+            rows.forEach((r, i) => r.splice(col, 0, i === 1 ? "---" : ""));
+          }),
+        },
+        { label: "右侧插入列", action: act((rows) => insertTableCol(rows, col)) },
+      ],
+    },
+    {
+      label: "移动该行",
+      children: [
+        { label: "上移该行", accel: "Alt+↑", disabled: row <= 1, action: act((rows) => moveTableRow(rows, row, -1)) },
+        {
+          label: "下移该行",
+          accel: "Alt+↓",
+          disabled: row <= 0 || row >= lastRow,
+          action: act((rows) => moveTableRow(rows, row, 1)),
+        },
+      ],
+    },
+    {
+      label: "移动该列",
+      children: [
+        { label: "左移该列", accel: "Alt+←", disabled: col <= 0, action: act((rows) => moveTableCol(rows, col, -1)) },
+        {
+          label: "右移该列",
+          accel: "Alt+→",
+          disabled: col >= colCount - 1,
+          action: act((rows) => moveTableCol(rows, col, 1)),
+        },
+      ],
+    },
+    {
+      label: "对齐方式",
+      children: [
+        { label: "左对齐", action: act((rows) => setAlign(rows, col, "left")) },
+        { label: "居中", action: act((rows) => setAlign(rows, col, "center")) },
+        { label: "右对齐", action: act((rows) => setAlign(rows, col, "right")) },
+      ],
+    },
     { separator: true },
-    { label: "在上方插入行", disabled: row <= 0, action: act((rows) => {
-      if (row <= 0) return false;
-      rows.splice(row + 1, 0, Array.from({ length: rows[0].length }, () => ""));
-    }) },
-    { label: "在下方插入行", action: act((rows) => insertTableRow(rows, row)) },
-    { label: "在左侧插入列", action: act((rows) => {
-      rows.forEach((r, i) => r.splice(col, 0, i === 1 ? "---" : ""));
-    }) },
-    { label: "在右侧插入列", action: act((rows) => insertTableCol(rows, col)) },
-    { label: "删除当前行", action: act((rows) => deleteTableRow(rows, row)) },
-    { label: "删除当前列", action: act((rows) => deleteTableCol(rows, col)) },
-    { separator: true },
-    { label: "当前列左对齐", action: act((rows) => setAlign(rows, col, "left")) },
-    { label: "当前列居中", action: act((rows) => setAlign(rows, col, "center")) },
-    { label: "当前列右对齐", action: act((rows) => setAlign(rows, col, "right")) },
-    { separator: true },
+    { label: "删除行", disabled: lastRow <= 0, action: act((rows) => deleteTableRow(rows, row)) },
+    { label: "删除列", disabled: colCount <= 1, action: act((rows) => deleteTableCol(rows, col)) },
     { label: "删除表格", danger: true, action: deleteTable },
+    { separator: true },
+    { label: "复制表格", action: copyTable },
+    { label: "格式化表格源码", action: formatSource },
+    { label: "编辑表格源码", action: editSource },
+    {
+      label: "排序",
+      children: [
+        { label: "按当前列升序排列", action: act((rows) => sortTableRows(rows, col, false)) },
+        { label: "按当前列降序排列", action: act((rows) => sortTableRows(rows, col, true)) },
+      ],
+    },
   ];
 }
 
@@ -1848,36 +2019,75 @@ function imageContextItems(el) {
   ];
 }
 
+/**
+ * 正文右键菜单：照 Typora 的段落面板排——图标行 + 多列按钮网格 + 分组的二级菜单，
+ * 而不是二十多项排成一长条。命令都走 commands 表，和快捷键、菜单栏保持同一套行为。
+ */
 function baseEditorContextItems() {
   const empty = view.state.selection.main.empty;
   return [
-    { label: "撤销", action: () => run("undo") },
-    { label: "重做", action: () => run("redo") },
-    { separator: true },
-    { label: "剪切", disabled: empty, action: () => run("cut") },
-    { label: "复制", disabled: empty, action: () => run("copy") },
-    { label: "复制为 Markdown", disabled: empty, action: () => run("copy-markdown") },
-    { label: "粘贴", action: () => run("paste") },
-    { label: "粘贴为纯文本", action: () => run("paste-plain") },
-    { label: "全选", action: () => run("select-all") },
-    { separator: true },
-    { label: "加粗", action: () => run("bold") },
-    { label: "斜体", action: () => run("italic") },
-    { label: "行内代码", action: () => run("code") },
-    { label: "插入链接", action: () => run("link") },
-    { label: "清除格式", disabled: empty, action: () => run("clear-format") },
-    { separator: true },
-    { label: "插入表格", action: () => run("table") },
-    { label: "插入图片", action: () => run("image") },
-    { label: "插入代码块", action: () => run("fence") },
-    { separator: true },
-    { label: "正文", action: () => run("p") },
-    { label: "一级标题", action: () => run("h1") },
-    { label: "二级标题", action: () => run("h2") },
-    { label: "引用", action: () => run("quote") },
-    { label: "无序列表", action: () => run("ul") },
-    { label: "有序列表", action: () => run("ol") },
-    { label: "任务列表", action: () => run("task") },
+    {
+      grid: [
+        { icon: "cut", title: "剪切", disabled: empty, action: () => run("cut") },
+        { icon: "copy", title: "复制", disabled: empty, action: () => run("copy") },
+        { icon: "paste", title: "粘贴", action: () => run("paste") },
+        {
+          icon: "trash",
+          title: "删除所选",
+          disabled: empty,
+          action: () => view.dispatch(view.state.replaceSelection("")),
+        },
+      ],
+    },
+    {
+      label: "复制 / 粘贴为…",
+      children: [
+        { label: "复制为 Markdown", disabled: empty, action: () => run("copy-markdown") },
+        { label: "粘贴为纯文本", action: () => run("paste-plain") },
+        { label: "全选", accel: ACCEL["select-all"], action: () => run("select-all") },
+      ],
+    },
+    {
+      grid: [
+        { label: "B", title: "加粗", cls: "is-bold", action: () => run("bold") },
+        { label: "I", title: "斜体", cls: "is-italic", action: () => run("italic") },
+        { icon: "code", title: "行内代码", action: () => run("code") },
+        { icon: "link", title: "插入链接", action: () => run("link") },
+      ],
+    },
+    {
+      grid: [
+        { label: "❝", title: "引用", action: () => run("quote") },
+        { label: "1.", title: "有序列表", action: () => run("ol") },
+        { label: "•", title: "无序列表", action: () => run("ul") },
+        { label: "☑", title: "任务列表", action: () => run("task") },
+      ],
+    },
+    {
+      label: "段落",
+      children: [
+        { label: "正文", action: () => run("p") },
+        { label: "一级标题", accel: "Ctrl+1", action: () => run("h1") },
+        { label: "二级标题", accel: "Ctrl+2", action: () => run("h2") },
+        { label: "三级标题", accel: "Ctrl+3", action: () => run("h3") },
+        { label: "四级标题", action: () => run("h4") },
+        { label: "五级标题", action: () => run("h5") },
+        { label: "六级标题", action: () => run("h6") },
+        { separator: true },
+        { label: "清除格式", disabled: empty, action: () => run("clear-format") },
+      ],
+    },
+    {
+      label: "插入",
+      children: [
+        { label: "图像", action: () => run("image") },
+        { label: "表格", accel: ACCEL.table, action: () => run("table") },
+        { label: "代码块", action: () => run("fence") },
+        { label: "公式块", action: () => run("math") },
+        { label: "水平分割线", action: () => run("hr") },
+        { label: "内容目录", action: () => run("toc") },
+      ],
+    },
   ];
 }
 

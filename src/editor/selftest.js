@@ -647,17 +647,78 @@ export async function runSelfTest(view, ctx) {
   }
   const delimiterAfter = doc().slice(insertAt).split('\n').find((line) => /^\|\s*:?-/.test(line) && line.includes('|'));
   ok('拖动表头调整列宽并写回源码', !!resize && delimiterAfter !== delimiterBefore, delimiterAfter || '无');
-  const sortDown = wrapOf()?.querySelector('.cm-table-btn[title="按当前列降序排列"]');
-  sortDown?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-  sortDown?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  // 表头工具条改成 Typora 式图标条：对齐 + 更多 + 删除表格，插入/排序等条目收进菜单
+  const toolbar = wrapOf()?.querySelector('.cm-table-toolbar');
+  ok(
+    '表格工具条为 Typora 式图标条',
+    !!toolbar && !!toolbar.querySelector('.cm-table-tools .cm-table-btn svg') && toolbar.querySelectorAll('.cm-table-btn').length === 5,
+    toolbar ? toolbar.querySelectorAll('.cm-table-btn').length + ' 个按钮' : '无'
+  );
+
+  const openTableMenu = () => {
+    cellOf(1, 0)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    return document.querySelector('.app-context');
+  };
+  const topTableItems = [
+    '插入行',
+    '插入列',
+    '移动该行',
+    '移动该列',
+    '对齐方式',
+    '删除行',
+    '删除列',
+    '删除表格',
+    '复制表格',
+    '格式化表格源码',
+    '编辑表格源码',
+    '排序',
+  ];
+  const tableMenu = openTableMenu();
+  ok(
+    '表格菜单顶层条目折叠成组',
+    !!tableMenu && topTableItems.every((label) => tableMenu.querySelector(`[data-context-action="${label}"]`)),
+    tableMenu ? [...tableMenu.querySelectorAll('[data-context-action]')].length + ' 项' : '无'
+  );
+
+  // 展开「插入行」二级菜单：条目与快捷键提示都在这里
+  tableMenu?.querySelector('[data-context-action="插入行"]')?.dispatchEvent(
+    new MouseEvent('click', { bubbles: true, cancelable: true })
+  );
+  await waitFor(() => document.querySelectorAll('.app-context').length > 1, 600);
+  const tableSubMenu = document.querySelectorAll('.app-context')[1];
+  ok(
+    '表格菜单支持二级折叠',
+    !!tableSubMenu &&
+      !!tableSubMenu.querySelector('[data-context-action="下方插入行"]') &&
+      !!tableSubMenu.querySelector('[data-context-action="上方插入行"]'),
+    tableSubMenu ? tableSubMenu.textContent.replace(/\s+/g, ' ').slice(0, 24) : '无'
+  );
+  ok('子菜单带快捷键提示', !!tableSubMenu?.querySelector('.context-accel'));
+
+  // 排序：走「排序」二级菜单
+  const linesBeforeContext = view.state.doc.lines;
+  openTableMenu()
+    ?.querySelector('[data-context-action="排序"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  await waitFor(() => document.querySelectorAll('.app-context').length > 1, 600);
+  document
+    .querySelectorAll('.app-context')[1]
+    ?.querySelector('[data-context-action="按当前列降序排列"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   await sleep(240);
   ok('表格可按当前列降序排列', doc().indexOf('| a2 |') >= 0 && doc().indexOf('| a2 |') < doc().indexOf('| a1-改 |'));
-  cellOf(1, 0)?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
-  const tableMenu = document.querySelector('.app-context');
-  const linesBeforeContext = view.state.doc.lines;
-  tableMenu?.querySelector('[data-context-action="在下方插入行"]')?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+
+  // 插入行同样走二级菜单
+  openTableMenu()
+    ?.querySelector('[data-context-action="插入行"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+  await waitFor(() => document.querySelectorAll('.app-context').length > 1, 600);
+  document
+    .querySelectorAll('.app-context')[1]
+    ?.querySelector('[data-context-action="下方插入行"]')
+    ?.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
   await waitFor(() => view.state.doc.lines === linesBeforeContext + 1, 900);
-  ok('表格右键可增删行列', !!tableMenu && !!tableMenu.querySelector('[data-context-action="删除当前列"]') && view.state.doc.lines === linesBeforeContext + 1);
+  ok('表格右键可增删行列', view.state.doc.lines === linesBeforeContext + 1);
 
   // 拆掉临时表格，文档回到原样
   if (editor()) {
@@ -1237,7 +1298,15 @@ export async function runSelfTest(view, ctx) {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
   view.contentDOM.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
   const editorMenu = document.querySelector('.app-context');
-  ok('编辑区右键包含剪贴板与格式操作', !!editorMenu && ['剪切', '复制', '复制为 Markdown', '粘贴为纯文本', '加粗', '插入表格'].every((label) => editorMenu.querySelector(`[data-context-action="${label}"]`)));
+  ok(
+    '编辑区右键为 Typora 式面板',
+    !!editorMenu &&
+      ['剪切', '复制', '粘贴', '删除所选', 'B', 'I', '复制 / 粘贴为…', '段落', '插入'].every((label) =>
+        editorMenu.querySelector(`[data-context-action="${label}"]`)
+      ) &&
+      !!editorMenu.querySelector('.context-grid'),
+    editorMenu ? [...editorMenu.querySelectorAll('[data-context-action]')].length + ' 项' : '无'
+  );
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
 
   // 剪贴板富文本与渲染后纯文本断言

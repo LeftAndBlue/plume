@@ -80,8 +80,12 @@ npm run dist           # vite build + tauri build --bundles nsis
 网络不通会报 `failed to bundle project: timeout: global`——此时先挂代理再重试，
 或手动下载 `nsis-3.13.zip`（tauri-apps/binary-releases）后重试；exe 本身不受影响。
 
-图标：`src-tauri/icons/icon.png` 来自用户提供的 logo，自动裁出主体、居中并保留透明背景，
-`npx tauri icon src-tauri/icons/icon.png` 可重新生成全套。
+图标：矢量源文件为 `design/logo/app-icon.svg`——字母 **P** 的内孔做成「实时预览窗」，
+左边是 Markdown 源码 `#`、中间编辑光标、右边是渲染后的标题行。
+同目录另有 `app-icon-light.svg`（净纸浅底版）、`mark.svg`（透明底标记）与
+`letter-b/c.svg`（另两版备选），`design/logo/proposal.html` 是完整设计提案。
+用 `design/logo/render.mjs` 导出 `src-tauri/icons/icon.png` 与网页 favicon（64px）后，
+执行 `npx tauri icon src-tauri/icons/icon.png` 可重新生成全套平台图标。
 
 ## 发布更新（应用内自动更新）
 

@@ -1,17 +1,9 @@
 import { EditorView, WidgetType } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
-import { commitCellEditor, editTable, openCellEditor, tableCursorAt } from './table-edit.js';
+import { editTable, openCellEditor, tableCursorAt } from './table-edit.js';
 import { renderInline, renderTex, isTexReady } from './inline-text.js';
 import { openLangMenu } from './lang-menu.js';
-import {
-  deleteTableCol,
-  deleteTableRow,
-  insertTableCol,
-  insertTableRow,
-  setAlign,
-  setTableColumnWidth,
-  sortTableRows,
-} from './table-model.js';
+import { setAlign, setTableColumnWidth } from './table-model.js';
 
 /* ---------------- 资源路径解析 ---------------- */
 
@@ -428,35 +420,14 @@ export class TableWidget extends WidgetType {
     wrap.dataset.from = String(this.from);
     wrap.dataset.to = String(this.to);
 
-    const cursor = tableCursorAt(this.lineNo);
+    // 光标位置随点击更新：工具条按钮必须作用于「刚点的那一格」，
+    // 而不是渲染 widget 时的快照（否则点第三行可能加到第二行上）。
+    let cursor = tableCursorAt(this.lineNo);
     const bar = document.createElement('div');
     bar.className = 'cm-table-toolbar';
     bar.addEventListener('mousedown', (e) => e.stopPropagation());
     const act = (mutate) => {
       editTable(view, this.lineNo, mutate).catch(() => {});
-    };
-    const addBtn = (label, title, onClick, on) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'cm-table-btn' + (on ? ' is-on' : '');
-      b.title = title;
-      if (label instanceof Node) b.appendChild(label);
-      else b.textContent = label;
-      b.addEventListener('mousedown', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-      });
-      b.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onClick();
-      });
-      return b;
-    };
-    const sep = () => {
-      const s = document.createElement('span');
-      s.className = 'cm-table-sep';
-      return s;
     };
     const alignNow = this.aligns[cursor.col] || '';
     const svg = (paths) => {
@@ -473,31 +444,100 @@ export class TableWidget extends WidgetType {
       el.innerHTML = paths;
       return el;
     };
-    bar.append(
-      addBtn('左', '当前列左对齐', () => act((rows) => setAlign(rows, cursor.col, 'left')), !alignNow),
-      addBtn('中', '当前列居中', () => act((rows) => setAlign(rows, cursor.col, 'center')), alignNow === 'center'),
-      addBtn('右', '当前列右对齐', () => act((rows) => setAlign(rows, cursor.col, 'right')), alignNow === 'right'),
-      sep(),
-      addBtn('+行', '在当前行下方插入一行', () => act((rows) => insertTableRow(rows, cursor.row))),
-      addBtn('+列', '在当前列右侧插入一列', () => act((rows) => insertTableCol(rows, cursor.col))),
-      addBtn('−行', '删除当前行', () => act((rows) => deleteTableRow(rows, cursor.row))),
-      addBtn('−列', '删除当前列', () => act((rows) => deleteTableCol(rows, cursor.col))),
-      addBtn('↑', '按当前列升序排列', () => act((rows) => sortTableRows(rows, cursor.col, false))),
-      addBtn('↓', '按当前列降序排列', () => act((rows) => sortTableRows(rows, cursor.col, true))),
-      sep(),
-      addBtn(
-        svg('<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>'),
-        '显示表格源码',
-        () => {
-          commitCellEditor().then(() => {
-            if (this.lineNo < 1 || this.lineNo > view.state.doc.lines) return;
-            const line = view.state.doc.line(this.lineNo);
-            view.dispatch({ selection: { anchor: line.from }, scrollIntoView: true });
-            view.focus();
-          });
-        }
-      )
+    const iconBtn = (icon, title, onClick, on) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'cm-table-btn' + (on ? ' is-on' : '');
+      b.title = title;
+      b.appendChild(icon);
+      b.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      b.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      });
+      return b;
+    };
+    const alignIcon = (mode) =>
+      svg(
+        mode === 'left'
+          ? '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="13" y2="12"/><line x1="3" y1="18" x2="17" y2="18"/>'
+          : mode === 'center'
+            ? '<line x1="3" y1="6" x2="21" y2="6"/><line x1="7" y1="12" x2="17" y2="12"/><line x1="5" y1="18" x2="19" y2="18"/>'
+            : '<line x1="3" y1="6" x2="21" y2="6"/><line x1="11" y1="12" x2="21" y2="12"/><line x1="7" y1="18" x2="21" y2="18"/>',
+      );
+
+    // Typora 式表头工具条：左边当前列对齐，右边「更多」（整份表格菜单）与「删除表格」。
+    // 插入/移动/删除行列等条目统一收在菜单里，由 runtime 维护，避免两处各写一份。
+    const toolsLeft = document.createElement('div');
+    toolsLeft.className = 'cm-table-tools';
+    const alignLeft = iconBtn(
+      alignIcon('left'),
+      '当前列左对齐',
+      () => act((rows) => setAlign(rows, cursor.col, 'left')),
+      !alignNow,
     );
+    const alignCenter = iconBtn(
+      alignIcon('center'),
+      '当前列居中',
+      () => act((rows) => setAlign(rows, cursor.col, 'center')),
+      alignNow === 'center',
+    );
+    const alignRight = iconBtn(
+      alignIcon('right'),
+      '当前列右对齐',
+      () => act((rows) => setAlign(rows, cursor.col, 'right')),
+      alignNow === 'right',
+    );
+    toolsLeft.append(alignLeft, alignCenter, alignRight);
+
+    /** 点击不同列后，对齐按钮的高亮要跟着当前列走。 */
+    const refreshAlign = () => {
+      const now = this.aligns[cursor.col] || '';
+      alignLeft.classList.toggle('is-on', !now);
+      alignCenter.classList.toggle('is-on', now === 'center');
+      alignRight.classList.toggle('is-on', now === 'right');
+    };
+    const moreBtn = iconBtn(
+      svg('<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>'),
+      '更多表格操作',
+      () => {
+        // 把 contextmenu 派发到光标所在单元格，复用编辑区的表格菜单
+        const trs = wrap.querySelectorAll('tr');
+        const tr = trs[Math.min(cursor.row, trs.length - 1)];
+        const target =
+          (tr && tr.children[Math.min(cursor.col, tr.children.length - 1)]) || wrap.querySelector('th, td');
+        if (!target) return;
+        const rect = moreBtn.getBoundingClientRect();
+        target.dispatchEvent(
+          new MouseEvent('contextmenu', {
+            bubbles: true,
+            cancelable: true,
+            button: 2,
+            clientX: rect.left + 6,
+            clientY: rect.bottom + 10,
+          }),
+        );
+      },
+    );
+    const trashBtn = iconBtn(
+      svg(
+        '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
+      ),
+      '删除表格',
+      () => {
+        const from = Number(wrap.dataset.from);
+        const to = Number(wrap.dataset.to);
+        view.dispatch({ changes: { from, to, insert: '' }, selection: { anchor: from } });
+      },
+    );
+    const toolsRight = document.createElement('div');
+    toolsRight.className = 'cm-table-tools';
+    toolsRight.append(moreBtn, trashBtn);
+    bar.append(toolsLeft, toolsRight);
     wrap.appendChild(bar);
 
     const scroll = document.createElement('div');
@@ -550,7 +590,16 @@ export class TableWidget extends WidgetType {
             const startWidth = cell.getBoundingClientRect().width;
             let width = startWidth;
             const move = (ev) => {
-              width = Math.max(48, Math.min(480, startWidth + ev.clientX - startX));
+              // 其他列按当前实际渲染宽度计：拖拽列不允许把列宽总和顶出容器宽度，
+              // 否则表格会横向溢出、冒出滚动条，视觉上把最后一行压窄。
+              // clientWidth 取不到（未布局）时不施加容器约束，退回原来 48~480 的范围。
+              const others = colElements.reduce(
+                (sum, col, idx) => (idx === i ? sum : sum + col.getBoundingClientRect().width),
+                0,
+              );
+              const avail = scroll.clientWidth;
+              const limit = avail > 0 ? Math.max(48, avail - others) : 480;
+              width = Math.max(48, Math.min(480, limit, startWidth + ev.clientX - startX));
               colElements[i].style.width = width + 'px';
             };
             const up = () => {
@@ -577,11 +626,28 @@ export class TableWidget extends WidgetType {
     scroll.appendChild(table);
     wrap.appendChild(scroll);
 
+    // 历史文档里可能存了过宽的列宽（总和 > 容器宽度），渲染后会横向溢出、
+    // 冒出滚动条把最后一行挤窄。挂载后按比例压回容器宽度（只影响显示，不改写 markdown）。
+    requestAnimationFrame(() => {
+      if (!scroll.isConnected) return;
+      const avail = scroll.clientWidth;
+      if (!avail) return;
+      const widths = colElements.map((c) => parseFloat(c.style.width) || 48);
+      const total = widths.reduce((a, b) => a + b, 0);
+      if (total <= avail) return;
+      const scale = avail / total;
+      colElements.forEach((c, idx) => {
+        c.style.width = Math.max(48, Math.round(widths[idx] * scale)) + 'px';
+      });
+    });
+
     wrap.addEventListener('mousedown', (e) => {
       if (e.target instanceof Element && e.target.closest('.cm-table-toolbar')) return;
       e.preventDefault();
       const hit = e.target instanceof Element ? e.target.closest('td, th') : null;
       if (hit && hit._cell) {
+        cursor = { row: hit._cell.row, col: hit._cell.col };
+        refreshAlign();
         Promise.resolve(openCellEditor(view, hit)).catch((err) => {
           window.__cellErr = String((err && err.stack) || err);
         });

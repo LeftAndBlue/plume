@@ -293,6 +293,85 @@ export async function editTable(view, lineNo, mutate) {
   return true;
 }
 
+/* ---------------- 格式化表格源码（Typora 的「格式化表格源码」） ---------------- */
+
+/** 显示宽度：CJK / 全角字符按 2 列算，其余按 1 列，用于把源码表格对齐。 */
+function displayWidth(text) {
+  let n = 0;
+  for (const ch of String(text)) {
+    const cp = ch.codePointAt(0) || 0;
+    const wide =
+      (cp >= 0x1100 && cp <= 0x115f) ||
+      (cp >= 0x2e80 && cp <= 0xa4cf) ||
+      (cp >= 0xac00 && cp <= 0xd7a3) ||
+      (cp >= 0xf900 && cp <= 0xfaff) ||
+      (cp >= 0xfe30 && cp <= 0xfe6f) ||
+      (cp >= 0xff00 && cp <= 0xff60) ||
+      (cp >= 0xffe0 && cp <= 0xffe6) ||
+      (cp >= 0x20000 && cp <= 0x3fffd);
+    n += wide ? 2 : 1;
+  }
+  return n;
+}
+
+const padTo = (text, width) => text + ' '.repeat(Math.max(0, width - displayWidth(text)));
+
+function alignOfSpec(spec) {
+  const s = String(spec || '').trim();
+  if (s.startsWith(':') && s.endsWith(':')) return 'center';
+  if (s.endsWith(':')) return 'right';
+  return 'left';
+}
+
+/** 与 setAlign 的写法保持一致：左对齐也带前冒号（`:---`）。 */
+function specFor(align, width) {
+  const w = Math.max(3, width);
+  if (align === 'center') return `:${'-'.repeat(Math.max(1, w - 2))}:`;
+  if (align === 'right') return `${'-'.repeat(Math.max(2, w - 1))}:`;
+  return `:${'-'.repeat(Math.max(2, w - 1))}`;
+}
+
+/**
+ * 把整张表的源码按列宽重新对齐（中文按 2 宽），分隔行按原对齐方式重写。
+ * 只改源码排版，不改变单元格内容。
+ */
+export async function formatTable(view, lineNo) {
+  if (active) await commit(null, { refocus: false });
+  const found = locateTable(view.state.doc, lineNo);
+  if (!found) return false;
+  const raw = view.state.doc.sliceString(found.from, found.to);
+  const rows = raw
+    .split('\n')
+    .filter((line) => line.trim())
+    .map(splitCells);
+  if (rows.length < 2) return false;
+
+  const cols = Math.max(...rows.map((row) => row.length));
+  const widths = Array.from({ length: cols }, () => 3);
+  rows.forEach((row, index) => {
+    if (index === 1) return; // 分隔行由对齐方式重新生成
+    for (let c = 0; c < cols; c++) {
+      widths[c] = Math.max(widths[c], displayWidth(String(row[c] ?? '').trim()));
+    }
+  });
+
+  const out = rows
+    .map((row, index) => {
+      const cells = [];
+      for (let c = 0; c < cols; c++) {
+        const text = String(row[c] ?? '').trim();
+        cells.push(index === 1 ? specFor(alignOfSpec(text), widths[c]) : padTo(text, widths[c]));
+      }
+      return joinRow(cells);
+    })
+    .join('\n');
+
+  if (out === raw) return false;
+  view.dispatch({ changes: { from: found.from, to: found.to, insert: out } });
+  view.focus();
+  return true;
+}
+
 /** 供外部（例如打开新文件）强制作废当前编辑 */
 export function cancelCellEditor() {
   if (!active) return;

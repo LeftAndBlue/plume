@@ -71,3 +71,25 @@ export function setTableColumnWidth(rows, col, width, align) {
   const spec = '-'.repeat(Math.max(3, Math.round(width / 8)));
   rows[1][col] = align === 'center' ? `:${spec}:` : align === 'right' ? `${spec}:` : `:${spec}`;
 }
+
+/** 上移/下移一整行（visualRow 0 是表头，不可移动；数据行从视觉行 1 开始）。 */
+export function moveTableRow(rows, visualRow, delta) {
+  if (visualRow <= 0 || !delta) return false;
+  const from = visualRow + 1; // rows[0]=表头、rows[1]=分隔行，数据行从 2 起
+  const to = from + delta;
+  if (from < 2 || from >= rows.length || to < 2 || to >= rows.length) return false;
+  const [row] = rows.splice(from, 1);
+  rows.splice(to, 0, row);
+  return true;
+}
+
+/** 左移/右移一整列（表头、分隔行、数据行一起换位）。 */
+export function moveTableCol(rows, col, delta) {
+  const to = col + delta;
+  if (!delta || col < 0 || to < 0 || col >= rows[0].length || to >= rows[0].length) return false;
+  rows.forEach((row) => {
+    const [cell] = row.splice(col, 1);
+    row.splice(to, 0, cell);
+  });
+  return true;
+}

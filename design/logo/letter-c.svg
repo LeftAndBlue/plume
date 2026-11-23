@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- C · P / 字标：最克制，内孔一个 # 点明 Markdown，右侧光标点明实时输入 -->
+  <defs>
+    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#143A5E"/>
+      <stop offset="0.55" stop-color="#0C2743"/>
+      <stop offset="1" stop-color="#071729"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.76" cy="0.22" r="0.78">
+      <stop offset="0" stop-color="#2BB6AE" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#2BB6AE" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mark" x1="0" y1="1" x2="1" y2="0">
+      <stop offset="0" stop-color="#E9F8FF"/>
+      <stop offset="0.55" stop-color="#BCEBF3"/>
+      <stop offset="1" stop-color="#6FE3CE"/>
+    </linearGradient>
+  </defs>
+  <rect x="40" y="40" width="944" height="944" rx="212" fill="url(#tile)"/>
+  <rect x="40" y="40" width="944" height="944" rx="212" fill="url(#glow)"/>
+  <rect x="41" y="41" width="942" height="942" rx="211" fill="none" stroke="#FFFFFF" stroke-opacity="0.09" stroke-width="2"/>
+
+  <path d="M 307 812 V 272 H 517 A 200 200 0 0 1 517 672 H 307"
+        fill="none" stroke="url(#mark)" stroke-width="120"
+        stroke-linejoin="round" stroke-linecap="butt"/>
+
+  <!-- 内孔：一个 Markdown 标题标记 -->
+  <g stroke="#6FE3CE" stroke-width="15" stroke-linecap="round">
+    <path d="M 462 396 L 448 504"/>
+    <path d="M 526 396 L 512 504"/>
+    <path d="M 438 428 L 538 428"/>
+    <path d="M 434 468 L 534 468"/>
+  </g>
+
+  <!-- 编辑光标 -->
+  <rect x="806" y="374" width="12" height="276" rx="6" fill="#6FE3CE"/>
+  <rect x="798" y="360" width="28" height="14" rx="4" fill="#6FE3CE"/>
+</svg>
