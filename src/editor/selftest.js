@@ -10,6 +10,7 @@ import { deletePair, exitQuoteOnBackspace, handleInput, navigateFence, protectFe
 import { getCodeFences, isFenceDraft } from './code-fences.js';
 import { escapeXml, frontMatterEnd, splitMarkdownLines } from './markdown-source.js';
 import { renderSelectionForClipboard, resolveImageForClipboard, htmlToPlainText } from './clipboard.js';
+import { buildTableMarkdown } from './table-model.js';
 import { i18n } from '../i18n.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -27,6 +28,36 @@ export async function runSelfTest(view, ctx) {
   };
   const doc = () => view.state.doc.toString();
   const doc0 = doc();
+
+  /* ---- 0. 插入表格的行列生成器（纯函数） ---- */
+  // rows 是渲染后的总行数（含表头），源码还要多一行分隔行：
+  // 3 列 × 2 行 = 表头 + 分隔行 + 1 行数据，共 3 行源码。
+  const mdLines = (md) => md.split('\n').filter(Boolean);
+  const cellCount = (line) => line.split('|').length - 2;
+  const md3x2 = buildTableMarkdown(3, 2);
+  ok('表格生成器 3×2 行数与结尾换行', mdLines(md3x2).length === 3 && md3x2.endsWith('\n'), JSON.stringify(md3x2));
+  ok('表格生成器表头占位', mdLines(md3x2)[0] === '| 列 1 | 列 2 | 列 3 |', mdLines(md3x2)[0]);
+  ok('表格生成器分隔行', mdLines(md3x2)[1] === '| --- | --- | --- |', mdLines(md3x2)[1]);
+  // 低于下限钳到 2 列 × 2 行，高于上限钳到 20 列 × 30 行
+  const mdSmall = buildTableMarkdown(1, 1);
+  ok(
+    '表格生成器钳制到 2×2 下限',
+    mdLines(mdSmall).length === 3 && cellCount(mdLines(mdSmall)[0]) === 2,
+    '1×1 应钳到 2 列 × 2 行',
+  );
+  const mdBig = buildTableMarkdown(99, 99);
+  ok(
+    '表格生成器钳制到 20×30 上限',
+    mdLines(mdBig).length === 31 && cellCount(mdLines(mdBig)[0]) === 20,
+    '99×99 应钳到 20 列 × 30 行',
+  );
+  // 渲染器要求表头与分隔行列数一致，生成器不能给出错位表格
+  const md5x4 = buildTableMarkdown(5, 4);
+  ok(
+    '表格生成器表头与分隔同列数',
+    mdLines(md5x4).length === 5 && cellCount(mdLines(md5x4)[0]) === cellCount(mdLines(md5x4)[1]),
+    '5 列 × 4 行应为 5 行源码且两行列数相同',
+  );
 
   /* CM 只渲染视口内的内容，所以每组检查前先把目标滚进来 */
   const scrollTo = async (needle) => {

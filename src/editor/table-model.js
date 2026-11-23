@@ -5,6 +5,28 @@
  * 这里不读取文档、不访问 DOM，也不派发编辑器事务；调用方负责持久化。
  */
 
+/**
+ * 按「几列 × 几行」生成一份可直接插入的 Markdown 表格。
+ *
+ * rows 是**总行数（含表头）**：2 行 = 表头 + 1 行数据，与选择器上看到的
+ * 表格大小一致。下限 2 列 2 行，是因为渲染器要求至少 2 列，而 Markdown
+ * 表格必须有一行表头；上限与选择器保持一致。
+ *
+ * 纯字符串函数，不碰文档，便于自检直接断言。
+ */
+export function buildTableMarkdown(cols, rows) {
+  const clamp = (v, lo, hi) => {
+    const n = Math.round(Number(v));
+    return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : lo;
+  };
+  const c = clamp(cols, 2, 20);
+  const r = clamp(rows, 2, 30);
+  const line = (cell) => '| ' + Array.from({ length: c }, (_, i) => cell(i)).join(' | ') + ' |';
+  const lines = [line((i) => `列 ${i + 1}`), line(() => '---')];
+  for (let n = 1; n < r; n++) lines.push(line(() => '内容'));
+  return lines.join('\n') + '\n';
+}
+
 export function cloneTableRows(rows) {
   return rows.map((row) => row.slice());
 }

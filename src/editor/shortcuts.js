@@ -51,6 +51,7 @@ const SHORTCUTS = [
       { label: '正文', cmd: 'p', keys: 'Ctrl+0' },
       { label: '代码块', cmd: 'fence', keys: 'Ctrl+Shift+K' },
       { label: '公式块', cmd: 'math', keys: 'Ctrl+Shift+M' },
+      { label: '表格', cmd: 'table', keys: 'Ctrl+Shift+T' },
     ],
   },
   {

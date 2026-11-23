@@ -221,6 +221,14 @@ const zhCN = {
   "quick.empty": "输入关键词开始搜索",
   "quick.noMatch": "没有匹配的文件",
   "quick.lineSub": "第 {n} 行 · {text}",
+
+  "tablePicker.title": "插入表格",
+  "tablePicker.hint": "行数含表头 · 方向键微调",
+  "tablePicker.cols": "列数",
+  "tablePicker.rows": "行数",
+  "tablePicker.readout": "{cols} 列 × {rows} 行",
+  "tablePicker.cancel": "取消",
+  "tablePicker.insert": "插入",
 };
 
 const en = {
@@ -431,6 +439,14 @@ const en = {
   "quick.empty": "Type a keyword to search",
   "quick.noMatch": "No matching files",
   "quick.lineSub": "Line {n} · {text}",
+
+  "tablePicker.title": "Insert table",
+  "tablePicker.hint": "Rows include header · use arrow keys",
+  "tablePicker.cols": "Cols",
+  "tablePicker.rows": "Rows",
+  "tablePicker.readout": "{cols} × {rows}",
+  "tablePicker.cancel": "Cancel",
+  "tablePicker.insert": "Insert",
 };
 
 const MESSAGES = { "zh-CN": zhCN, en };

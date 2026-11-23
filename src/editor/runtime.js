@@ -111,6 +111,7 @@ import {
   setLocalUrlConverter,
 } from "./widgets.js";
 import {
+  buildTableMarkdown,
   deleteTableCol,
   deleteTableRow,
   insertTableCol,
@@ -120,6 +121,7 @@ import {
   setAlign,
   sortTableRows,
 } from "./table-model.js";
+import { openTablePicker } from "./table-picker.js";
 import { cancelCellEditor, commitCellEditor, editTable, formatTable } from "./table-edit.js";
 import { normalizeMarkdownText, parseImageAttrs } from "./rich-doc.js";
 import { useShellStore } from "../stores/shell.js";
@@ -492,6 +494,7 @@ const view = new EditorView({
         { key: "Mod-k", run: () => (insertLink(), true) },
         { key: "Mod-Shift-k", run: () => (insertFence(), true) },
         { key: "Mod-Shift-m", run: () => (insertMathBlock(), true) },
+        { key: "Mod-Shift-t", run: () => (run("table"), true) },
         { key: "Mod-1", run: () => (setHeading(1), true) },
         { key: "Mod-2", run: () => (setHeading(2), true) },
         { key: "Mod-3", run: () => (setHeading(3), true) },
@@ -2081,7 +2084,7 @@ function baseEditorContextItems() {
       label: "插入",
       children: [
         { label: "图像", action: () => run("image") },
-        { label: "表格", accel: ACCEL.table, action: () => run("table") },
+        { label: "表格…", accel: ACCEL.table, action: () => run("table") },
         { label: "代码块", action: () => run("fence") },
         { label: "公式块", action: () => run("math") },
         { label: "水平分割线", action: () => run("hr") },
@@ -2388,10 +2391,55 @@ function insertMathBlock() {
   insertAtCursor("$$\n\\int_{0}^{1} x^2\\,dx = \\frac{1}{3}\n$$\n", 3);
 }
 
-function insertTable() {
-  insertAtCursor(
-    "| 列 1 | 列 2 | 列 3 |\n| --- | :---: | ---: |\n| 内容 | 内容 | 内容 |\n",
-  );
+/** 插入表格时选择器的弹出位置：贴着光标下方；拿不到坐标就退到窗口中心。 */
+function insertAnchorAtCaret() {
+  try {
+    const c = view.coordsAtPos(view.state.selection.main.from);
+    if (c && Number.isFinite(c.left) && Number.isFinite(c.bottom)) {
+      return { x: c.left, y: c.bottom };
+    }
+  } catch {
+    /* 文档还没布局好时 coordsAtPos 会拿不到坐标 */
+  }
+  return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+}
+
+/** 记住上次选的尺寸：连续插几张表时不用每次重新拨。 */
+let lastTableSize = { cols: 3, rows: 2 };
+
+/** 打开「几行几列」选择器；尺寸确认后按光标位置插入。 */
+function pickTableSize() {
+  openTablePicker({
+    anchor: insertAnchorAtCaret(),
+    initial: lastTableSize,
+    onPick: ({ cols, rows }) => {
+      lastTableSize = { cols, rows };
+      insertTable(cols, rows);
+    },
+    onClose: () => view.focus(),
+  });
+}
+
+/**
+ * 插入 cols × rows（含表头）的表格。表格是块级结构，光标若落在正文
+ * 中间，前后各补换行把段落切开，避免源码和表格粘在同一行；
+ * 插完选中第一个表头格子里的「列 1」，直接打字即可替换占位文案。
+ */
+function insertTable(cols = 3, rows = 2) {
+  const md = buildTableMarkdown(cols, rows);
+  const { state } = view;
+  const range = state.selection.main;
+  const startLine = state.doc.lineAt(range.from);
+  const endLine = state.doc.lineAt(range.to);
+  const prefix = startLine.text.slice(0, range.from - startLine.from).trim() ? "\n\n" : "";
+  const suffix = endLine.text.slice(range.to - endLine.from).trim() ? "\n" : "";
+  const from = range.from;
+  view.dispatch({
+    changes: { from, to: range.to, insert: prefix + md + suffix },
+    selection: EditorSelection.range(from + prefix.length + 2, from + prefix.length + 2 + "列 1".length),
+    scrollIntoView: true,
+  });
+  view.focus();
 }
 
 function insertHr() {
@@ -3682,7 +3730,7 @@ const commands = {
   image: pickImage,
   "upload-document-images": uploadDocumentImages,
   "image-settings": openImageSettings,
-  table: insertTable,
+  table: pickTableSize,
   toc: insertToc,
   fence: insertFence,
   math: insertMathBlock,
