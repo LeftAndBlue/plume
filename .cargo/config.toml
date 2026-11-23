@@ -1,8 +1,6 @@
-# crates 走 rsproxy 镜像（本机访问 crates.io 不稳定）
-[source.crates-io]
-replace-with = 'rsproxy-sparse'
-[source.rsproxy-sparse]
-registry = "sparse+https://rsproxy.cn/index/"
-
+# 这里只放通用设置：本机的国内镜像配置在 ~/.cargo/config.toml（用户级），不要提交到仓库。
+# 原因：CI 跑在 GitHub Actions 的海外 runner 上，若仓库强制 source 替换成 rsproxy.cn，
+# 会因访问国内镜像超时而失败（曾报 quinn-udp 等 crate 下载 504/502）。
+# cargo 会合并用户级与项目级配置，所以本机照样走镜像，CI 则直连 crates.io。
 [net]
 git-fetch-with-cli = true
