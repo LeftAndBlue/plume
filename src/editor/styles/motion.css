@@ -568,6 +568,37 @@ body.sidebar-dragging #workspace {
   line-height: 1.5;
 }
 
+/* 图床设置：测试结果内联提示 */
+.settings-note.is-ok {
+  color: var(--accent);
+}
+
+.settings-note.is-bad {
+  color: var(--danger, #e5484d);
+}
+
+/* 按所选图床服务切换配置块 */
+[data-provider][hidden] {
+  display: none;
+}
+
+/* 上传失败弹窗里的原始错误：等宽、可换行、可选中复制 */
+.error-detail {
+  margin: 8px 0 10px;
+  padding: 10px 12px;
+  max-height: 168px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.65 var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .settings-btn {
   margin-top: 8px;
   padding: 6px 12px;
@@ -576,6 +607,11 @@ body.sidebar-dragging #workspace {
   background: var(--bg);
   color: var(--text);
   cursor: pointer;
+}
+
+.settings-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
 }
 
 /* 未保存三态询问（Typora 式）：左侧「保存并关闭 / 不保存」，右侧「取消」。

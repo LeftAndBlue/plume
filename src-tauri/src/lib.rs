@@ -4,6 +4,7 @@
 mod exports;
 mod fs_ops;
 mod images;
+mod uploader;
 mod watch;
 #[cfg(target_os = "windows")]
 mod webview_print;
@@ -334,6 +335,28 @@ fn image_trash(source: String, doc_path: String) -> Result<bool, String> {
     Ok(true)
 }
 
+/* ---------------- 图床上传（PicGo Server） ---------------- */
+
+#[tauri::command]
+async fn image_upload(abs_path: String, server: Option<String>) -> Result<String, String> {
+    uploader::upload_picgo(&abs_path, server.as_deref()).await.map_err(cmd_err)
+}
+
+#[tauri::command]
+async fn image_upload_ping(server: Option<String>) -> Result<bool, String> {
+    Ok(uploader::ping(server.as_deref()).await)
+}
+
+#[tauri::command]
+async fn image_upload_easyimage(abs_path: String, base: String, token: String) -> Result<String, String> {
+    uploader::upload_easyimage(&abs_path, &base, &token).await.map_err(cmd_err)
+}
+
+#[tauri::command]
+async fn image_easyimage_ping(base: String) -> Result<bool, String> {
+    Ok(uploader::ping_easyimage(&base).await)
+}
+
 /* ---------------- 导出 ---------------- */
 
 #[tauri::command]
@@ -579,6 +602,10 @@ pub fn run() {
             image_collect,
             image_move,
             image_trash,
+            image_upload,
+            image_upload_ping,
+            image_upload_easyimage,
+            image_easyimage_ping,
             export_html,
             export_pdf,
             export_png,

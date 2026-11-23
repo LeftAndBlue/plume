@@ -392,6 +392,23 @@ body.alt-mode .mb-mnemonic {
   color: var(--accent);
 }
 
+/* 子菜单标记（▸）与返回行（←） */
+.menu-sub {
+  flex: 0 0 auto;
+  padding-left: 24px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.menu-item:hover .menu-sub,
+.menu-item.is-active .menu-sub {
+  color: var(--accent);
+}
+
+.menu-item.is-back .menu-mark {
+  color: var(--text-faint);
+}
+
 .menu-sep {
   height: 1px;
   margin: 4px 6px;

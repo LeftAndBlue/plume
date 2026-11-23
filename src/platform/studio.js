@@ -67,6 +67,10 @@ function createStudio() {
     collectImages: (sources, docPath, folder) => invoke('image_collect', { sources, docPath, folder }),
     moveImages: (sources, docPath, folder) => invoke('image_move', { sources, docPath, folder }),
     trashImage: (source, docPath) => invoke('image_trash', { source, docPath }),
+    uploadImage: (absPath, server) => invoke('image_upload', { absPath, server }),
+    pingImageUploader: (server) => invoke('image_upload_ping', { server }),
+    uploadImageEasyimage: (absPath, base, token) => invoke('image_upload_easyimage', { absPath, base, token }),
+    pingEasyimage: (base) => invoke('image_easyimage_ping', { base }),
 
     exportHtml: (html, s, docDir) => invoke('export_html', { html, s, docDir }),
     exportPdf: (html, s, docDir) => invoke('export_pdf', { html, s, docDir }),

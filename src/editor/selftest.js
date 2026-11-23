@@ -956,7 +956,7 @@ export async function runSelfTest(view, ctx) {
   };
 
   const mbItems = [...document.querySelectorAll('.mb-item')];
-  ok('菜单栏有四个菜单', mbItems.length === 4, mbItems.map((b) => b.textContent).join(' '));
+  ok('菜单栏有五个菜单', mbItems.length === 5, mbItems.map((b) => b.textContent).join(' '));
   ok('没有横铺的工具条', !document.getElementById('toolbar'));
   ok('菜单项带助记键', /F/.test(mbItems[0].textContent), mbItems[0].textContent);
 
@@ -982,6 +982,18 @@ export async function runSelfTest(view, ctx) {
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'F', altKey: true, bubbles: true }));
   await sleep(120);
   ok('Alt+F 展开文件菜单', !pop().hidden && pop().dataset.menu === 'file', pop().dataset.menu || '未展开');
+
+  // 导出收拢成子菜单：点「导出」下钻，Esc 逐级返回
+  clickRow('导出');
+  await waitFor(() => popRows().some((r) => rowLabel(r) === '导出 PDF'), 800);
+  ok(
+    '导出收拢为下拉子菜单',
+    popRows().some((r) => rowLabel(r) === '导出 PDF') && popRows().some((r) => r.classList.contains('is-back')),
+    popRows().map(rowLabel).join(' / ').slice(0, 40)
+  );
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  await sleep(100);
+  ok('子菜单 Esc 返回上一级', popRows().some((r) => rowLabel(r) === '另存为…'), popRows().map(rowLabel).join(' / ').slice(0, 30));
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   await sleep(100);
 

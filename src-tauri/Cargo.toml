@@ -1,6 +1,6 @@
 [package]
 name = "plume"
-version = "0.1.4"
+version = "0.1.5"
 description = "Plume — Typora-like WYSIWYG Markdown editor (Tauri + Rust + Vue + CodeMirror 6)"
 edition = "2021"
 rust-version = "1.77.2"
@@ -26,6 +26,9 @@ trash = "3"
 encoding_rs = "0.8"
 chardetng = "0.1"
 base64 = "0.22"
+# 图床上传：reqwest 已在 tauri-plugin-updater 的依赖树里，这里只声明直接使用（rustls 避免拉 native-tls；
+# multipart 供 EasyImage 直连适配器使用）
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "multipart"] }
 regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 opener = "0.8"

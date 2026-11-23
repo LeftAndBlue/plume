@@ -1,6 +1,6 @@
 {
   "productName": "Plume",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "identifier": "com.plume.editor",
   "build": {
     "frontendDist": "../dist",
@@ -26,7 +26,9 @@
       "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost data: blob: http: https:; font-src 'self' asset: http://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'",
       "assetProtocol": {
         "enable": true,
-        "scope": ["**"]
+        "scope": [
+          "**"
+        ]
       }
     }
   },
@@ -43,11 +45,16 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "createUpdaterArtifacts": true,
     "fileAssociations": [
       {
-        "ext": ["md", "markdown"],
+        "ext": [
+          "md",
+          "markdown"
+        ],
         "name": "Plume Markdown",
         "description": "Markdown 文档",
         "mimeType": "text/markdown"

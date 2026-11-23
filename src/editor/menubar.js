@@ -11,13 +11,18 @@
  *   { id, label, mnemonic: 'F', items: [
  *       { type: 'sep' }
  *       { label, cmd, accel, checked?: () => bool, disabled?: () => bool }
+ *       { label, submenu: () => [items] }   // 页内下钻：点开后在右侧展开下一级列表
  *   ] }
  */
 
-export function createMenubar({ bar, pop, menus, run }) {
+export function createMenubar({ bar, pop, menus, run, backLabel = '返回' }) {
   let openId = null; // 当前展开的菜单 id
   let activeIndex = -1; // 展开时键盘高亮的条目序号
   let altDown = false;
+  let currentRows = [];
+  let currentItems = [];
+  let currentList = []; // 当前列表的源（数组或返回数组的函数），从子菜单返回时重新渲染用
+  const subStack = []; // 子菜单下钻栈：[{ title, list }]
 
   const byId = (id) => menus.find((m) => m.id === id);
 
@@ -83,27 +88,61 @@ export function createMenubar({ bar, pop, menus, run }) {
   /* ---------------- 右侧命令列表 ---------------- */
 
   function render(menu) {
-    pop.replaceChildren();
+    subStack.length = 0;
     stageTitle.textContent = menu.label;
     // 自定义页（如主题页的表单）：由菜单自己渲染内容，不走命令列表。
     // 此时没有可高亮的命令行，键盘导航也让位给表单控件（见 keydown）。
     if (typeof menu.render === 'function') {
+      pop.replaceChildren();
+      currentRows = [];
       currentItems = [];
+      currentList = [];
       menu.render(pop, {
         run: (cmd) => run(cmd),
         close: () => close({ restoreFocus: true }),
       });
       return [];
     }
+    renderList(menu.items);
+    return currentRows;
+  }
+
+  /** 渲染一组命令行到 pop。source 可以是数组，也可以是返回数组的函数（从子菜单返回时重新求值以刷新勾选态）。 */
+  function renderList(source) {
+    currentList = source;
+    const list = typeof source === 'function' ? source() : source;
+    pop.replaceChildren();
     const rows = [];
     const items = []; // 和 rows 一一对应，KeyboardEvent 里按下标取回原始条目
-    const list = typeof menu.items === 'function' ? menu.items() : menu.items;
     for (const it of list) {
       if (it.type === 'sep') {
         const sep = document.createElement('div');
         sep.className = 'menu-sep';
         sep.setAttribute('role', 'separator');
         pop.appendChild(sep);
+        continue;
+      }
+      if (it.type === 'back') {
+        // 子菜单页的首行：返回上一级
+        const row = document.createElement('div');
+        row.className = 'menu-item is-back';
+        row.setAttribute('role', 'menuitem');
+        row.tabIndex = -1;
+        const back = document.createElement('span');
+        back.className = 'menu-mark';
+        back.textContent = '←';
+        const label = document.createElement('span');
+        label.className = 'menu-label';
+        label.textContent = backLabel;
+        row.append(back, label);
+        row.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          leaveSub();
+        });
+        rows.push(row);
+        items.push({ type: 'back' });
+        pop.appendChild(row);
         continue;
       }
       const row = document.createElement('div');
@@ -130,12 +169,20 @@ export function createMenubar({ bar, pop, menus, run }) {
         accel.textContent = it.accel;
         row.appendChild(accel);
       }
+      if (it.submenu) {
+        const arrow = document.createElement('span');
+        arrow.className = 'menu-sub';
+        arrow.textContent = '▸';
+        arrow.setAttribute('aria-hidden', 'true');
+        row.appendChild(arrow);
+      }
 
       row.addEventListener('mousedown', (e) => {
         e.preventDefault();
         e.stopPropagation();
         if (disabled) return;
-        fire(it);
+        if (it.submenu) enterSub(it);
+        else fire(it);
       });
       row.addEventListener('mouseenter', () => {
         activeIndex = rows.indexOf(row);
@@ -146,13 +193,27 @@ export function createMenubar({ bar, pop, menus, run }) {
       items.push(it);
       pop.appendChild(row);
     }
+    currentRows = rows;
     currentItems = items;
-    return rows;
+    activeIndex = -1;
+    paintActive();
   }
 
-  let currentRows = [];
-  let currentItems = [];
+  /** 进入子菜单：把当前列表压栈，右侧换成下一级列表（首行为返回）。 */
+  function enterSub(entry) {
+    const sub = typeof entry.submenu === 'function' ? entry.submenu() : entry.submenu;
+    subStack.push({ title: stageTitle.textContent, list: currentList });
+    stageTitle.textContent = `${subStack[subStack.length - 1].title} › ${entry.label}`;
+    renderList([{ type: 'back' }, ...sub]);
+  }
 
+  /** 返回上一级；栈空时不动。 */
+  function leaveSub() {
+    const prev = subStack.pop();
+    if (!prev) return;
+    stageTitle.textContent = prev.title;
+    renderList(prev.list);
+  }
   function paintActive() {
     currentRows.forEach((r, i) => r.classList.toggle('is-active', i === activeIndex));
   }
@@ -190,6 +251,7 @@ export function createMenubar({ bar, pop, menus, run }) {
     if (!openId && panel.hidden) return;
     openId = null;
     activeIndex = -1;
+    subStack.length = 0;
     panel.classList.remove('is-open');
     document.body.classList.remove('menu-open');
     for (const b of side.querySelectorAll('.mb-item')) b.classList.remove('is-open');
@@ -261,7 +323,9 @@ export function createMenubar({ bar, pop, menus, run }) {
       if (key === 'Escape' || key === 'F10') {
         e.preventDefault();
         e.stopPropagation();
-        close({ restoreFocus: true });
+        // 子菜单页先退回上一级，栈空才真正关闭
+        if (subStack.length) leaveSub();
+        else close({ restoreFocus: true });
         return;
       }
       // 自定义表单页：方向键 / 回车 / 空格等留给 select、checkbox 自己处理，
@@ -270,7 +334,14 @@ export function createMenubar({ bar, pop, menus, run }) {
       if (key === 'ArrowLeft' || key === 'ArrowRight') {
         e.preventDefault();
         e.stopPropagation();
-        switchMenu(key === 'ArrowLeft' ? -1 : 1);
+        if (key === 'ArrowLeft') {
+          if (subStack.length) leaveSub();
+          else switchMenu(-1);
+          return;
+        }
+        const item = currentItems[activeIndex];
+        if (item && item.submenu) enterSub(item);
+        else switchMenu(1);
         return;
       }
       if (key === 'ArrowDown' || key === 'ArrowUp') {
@@ -292,7 +363,10 @@ export function createMenubar({ bar, pop, menus, run }) {
           e.preventDefault();
           e.stopPropagation();
           const item = currentItems[activeIndex];
-          if (item) fire(item);
+          if (!item) return;
+          if (item.type === 'back') leaveSub();
+          else if (item.submenu) enterSub(item);
+          else fire(item);
         }
         return;
       }
