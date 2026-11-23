@@ -3769,7 +3769,8 @@ const commands = {
       detail:
         "Tauri + Rust + Vue + CodeMirror 6 的所见即所得 Markdown 编辑器。\n" +
         "编辑器内核是 CodeMirror 6，文件服务与目录监听由 Rust 提供。\n\n" +
-        `平台 ${info.platform || "windows"} · Tauri ${info.tauri || "2"}`,
+        `平台 ${info.platform || "windows"} · Tauri ${info.tauri || "2"}\n\n` +
+        "MIT 许可证 · 商业使用免费（保留版权声明与许可声明即可）",
     });
   },
 };

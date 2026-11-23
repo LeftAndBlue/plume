@@ -246,7 +246,13 @@ WebView2 **不允许页面加载 `file://` 子资源**，所以本地图片必�
 ## 许可证
 
 MIT © 2026 LeftAndBlue，全文见 [LICENSE](LICENSE)。
-第三方组件（Tauri、CodeMirror、Lezer、KaTeX、Mermaid、Vue、Lucide 等）各自保留原许可证。
+
+**商业使用免费**：MIT 许可证本身已允许商业使用，无需付费，也无需另行申请授权。
+可以闭源集成、打包进商业产品、作为 SaaS 对外提供服务，或直接转售；
+唯一义务是在副本或实质性部分中保留版权声明与许可声明（见 LICENSE）。
+
+第三方组件（Tauri、CodeMirror、Lezer、KaTeX、Mermaid、Vue、Lucide 等）各自保留原许可证，
+商用前请一并遵守其条款。
 
 ## 验证记录
 
