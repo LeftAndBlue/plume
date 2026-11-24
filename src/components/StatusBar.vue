@@ -1,5 +1,5 @@
 <script setup>
-import { Code, PanelLeft } from 'lucide-vue-next';
+import { Code, PanelLeft, PanelTop } from 'lucide-vue-next';
 import { useShellStore } from '../stores/shell.js';
 import { t } from '../i18n.js';
 
@@ -29,6 +29,18 @@ const run = (cmd) => shell.runtime?.run(cmd);
       @click="run('source-mode')"
     >
       <Code :size="14" :stroke-width="1.8" />
+    </button>
+    <!-- 标签栏收起后的恢复入口，和标签栏左端的隐藏按钮共用同一个命令 -->
+    <button
+      id="st-tabs"
+      class="st-tool"
+      :class="{ 'is-on': shell.tabsVisible }"
+      :title="t('status.toggleTabs')"
+      :aria-label="t('status.toggleTabsAria')"
+      :aria-pressed="shell.tabsVisible"
+      @click="run('toggle-tabs')"
+    >
+      <PanelTop :size="14" :stroke-width="1.8" />
     </button>
     <span class="st-spacer"></span>
     <button

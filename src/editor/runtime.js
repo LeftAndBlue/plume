@@ -2421,9 +2421,9 @@ function pickTableSize() {
 }
 
 /**
- * 插入 cols × rows（含表头）的表格。表格是块级结构，光标若落在正文
+ * 插入 cols × rows（含表头）的空表格。表格是块级结构，光标若落在正文
  * 中间，前后各补换行把段落切开，避免源码和表格粘在同一行；
- * 插完选中第一个表头格子里的「列 1」，直接打字即可替换占位文案。
+ * 插完把光标放进第一个表头格，直接打字即可填写。
  */
 function insertTable(cols = 3, rows = 2) {
   const md = buildTableMarkdown(cols, rows);
@@ -2436,7 +2436,8 @@ function insertTable(cols = 3, rows = 2) {
   const from = range.from;
   view.dispatch({
     changes: { from, to: range.to, insert: prefix + md + suffix },
-    selection: EditorSelection.range(from + prefix.length + 2, from + prefix.length + 2 + "列 1".length),
+    // 「| 」之后就是第一个空表头格
+    selection: { anchor: from + prefix.length + 2 },
     scrollIntoView: true,
   });
   view.focus();
@@ -3753,6 +3754,8 @@ const commands = {
   "view-files": () => showSide("files"),
   "view-outline": () => showSide("outline"),
   "toggle-sidebar": () => setSidebar(!sidebarVisible()),
+  // 标签栏显隐：状态栏 / 视图菜单是唯一入口；偏好由 store 持久化
+  "toggle-tabs": () => shell.toggleTabsVisible(),
   "source-mode": () => {
     const on = !view.state.field(sourceModeField, false);
     view.dispatch({
@@ -4201,6 +4204,11 @@ const MENUS = [
         label: t("menu.showSidebar"),
         cmd: "toggle-sidebar",
         checked: () => sidebarVisible(),
+      },
+      {
+        label: t("menu.showTabs"),
+        cmd: "toggle-tabs",
+        checked: () => shell.tabsVisible,
       },
       { type: "sep" },
       {

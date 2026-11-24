@@ -7,6 +7,8 @@ export const DRAFT_KEY = "plume.recovery.v1";
 export const SIDE_KEY = "plume.side";
 export const SIDE_OPEN_KEY = "plume.sidebar";
 export const SIDEBAR_WIDTH_KEY = "plume.sidebarWidth";
+/** 是否显示文档标签栏（标签栏左端按钮可收起，状态栏 / 视图菜单可恢复） */
+export const TABS_VISIBLE_KEY = "plume.tabsVisible";
 export const IMAGE_FOLDER_KEY = "plume.imageFolder.v1";
 export const IMAGE_UPLOAD_MODE_KEY = "plume.imageUploadMode.v1";
 export const IMAGE_UPLOAD_PROVIDER_KEY = "plume.imageUploadProvider.v1";
@@ -32,6 +34,7 @@ export const SETTINGS_KEYS = [
   SIDE_KEY,
   SIDE_OPEN_KEY,
   SIDEBAR_WIDTH_KEY,
+  TABS_VISIBLE_KEY,
   RECENT_KEY,
   LOCALE_KEY,
 ];

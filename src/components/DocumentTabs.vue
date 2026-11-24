@@ -8,7 +8,8 @@ const base = (p) => p.split(/[\\/]/).pop();
 </script>
 
 <template>
-  <div v-if="shell.tabs.length" id="document-tabs" role="tablist" :aria-label="t('tabs.aria')">
+  <!-- 显隐只由状态栏的 st-tabs 与「视图」菜单控制，本栏不再放开关 -->
+  <div v-if="shell.tabs.length && shell.tabsVisible" id="document-tabs" role="tablist" :aria-label="t('tabs.aria')">
     <div
       v-for="tab in shell.tabs"
       :key="tab.path"

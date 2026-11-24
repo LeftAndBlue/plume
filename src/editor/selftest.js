@@ -11,6 +11,7 @@ import { getCodeFences, isFenceDraft } from './code-fences.js';
 import { escapeXml, frontMatterEnd, splitMarkdownLines } from './markdown-source.js';
 import { renderSelectionForClipboard, resolveImageForClipboard, htmlToPlainText } from './clipboard.js';
 import { buildTableMarkdown } from './table-model.js';
+import { scanTables } from './rich-doc.js';
 import { i18n } from '../i18n.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -36,7 +37,11 @@ export async function runSelfTest(view, ctx) {
   const cellCount = (line) => line.split('|').length - 2;
   const md3x2 = buildTableMarkdown(3, 2);
   ok('表格生成器 3×2 行数与结尾换行', mdLines(md3x2).length === 3 && md3x2.endsWith('\n'), JSON.stringify(md3x2));
-  ok('表格生成器表头占位', mdLines(md3x2)[0] === '| 列 1 | 列 2 | 列 3 |', mdLines(md3x2)[0]);
+  ok(
+    '表格生成器单元格全部留空',
+    mdLines(md3x2)[0] === '|  |  |  |' && mdLines(md3x2)[2] === '|  |  |  |' && !/列 \d|内容/.test(md3x2),
+    mdLines(md3x2)[0],
+  );
   ok('表格生成器分隔行', mdLines(md3x2)[1] === '| --- | --- | --- |', mdLines(md3x2)[1]);
   // 低于下限钳到 2 列 × 2 行，高于上限钳到 20 列 × 30 行
   const mdSmall = buildTableMarkdown(1, 1);
@@ -57,6 +62,19 @@ export async function runSelfTest(view, ctx) {
     '表格生成器表头与分隔同列数',
     mdLines(md5x4).length === 5 && cellCount(mdLines(md5x4)[0]) === cellCount(mdLines(md5x4)[1]),
     '5 列 × 4 行应为 5 行源码且两行列数相同',
+  );
+  // 全空单元格不能把表格打回裸源码：扫描器必须仍认得出列数与行数
+  const emptyMd = buildTableMarkdown(4, 3);
+  const scanned = scanTables(EditorState.create({ doc: emptyMd }).doc);
+  ok(
+    '空单元格表格仍被渲染器识别',
+    scanned.length === 1 && scanned[0].cols === 4 && scanned[0].rows.length === 3,
+    scanned.length ? `cols=${scanned[0].cols} rows=${scanned[0].rows.length}` : '未识别为表格',
+  );
+  ok(
+    '空表格每个单元格内容为空',
+    scanned[0]?.rows.every((row) => row.cells.every((cell) => cell.text === '')) === true,
+    '不应残留「列 1」「内容」等占位文字',
   );
 
   /* CM 只渲染视口内的内容，所以每组检查前先把目标滚进来 */

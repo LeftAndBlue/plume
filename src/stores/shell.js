@@ -1,4 +1,23 @@
 import { defineStore } from 'pinia';
+import { TABS_VISIBLE_KEY } from '../editor/storage-keys.js';
+
+/** 偏好类状态统一从 localStorage 读；隐私模式等场景读写会抛错，一律退回默认值。 */
+function readBool(key, fallback = true) {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : v !== '0';
+  } catch {
+    return fallback;
+  }
+}
+
+function writeBool(key, value) {
+  try {
+    localStorage.setItem(key, value ? '1' : '0');
+  } catch {
+    /* 存不下就只保持本次会话的状态 */
+  }
+}
 
 /**
  * 外壳状态中枢。
@@ -32,6 +51,8 @@ export const useShellStore = defineStore('shell', {
 
     // 文档标签（仅元数据；EditorState 由运行时自己持有）
     tabs: [],
+    /** 标签栏是否显示：左端按钮收起，状态栏 / 视图菜单恢复，偏好持久化 */
+    tabsVisible: readBool(TABS_VISIBLE_KEY),
 
     // 文件树：组件自管展开/懒加载，运行时通过版本号请求刷新
     fileTreeVersion: 0,
@@ -73,6 +94,13 @@ export const useShellStore = defineStore('shell', {
     setSidebar(open) {
       this.sidebarOpen = open;
       localStorage.setItem('plume.sidebar', open ? '1' : '0');
+    },
+    setTabsVisible(v) {
+      this.tabsVisible = !!v;
+      writeBool(TABS_VISIBLE_KEY, this.tabsVisible);
+    },
+    toggleTabsVisible() {
+      this.setTabsVisible(!this.tabsVisible);
     },
     setSourceMode(v) {
       this.sourceMode = v;

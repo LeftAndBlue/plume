@@ -271,4 +271,10 @@ MIT © 2026 LeftAndBlue，全文见 [LICENSE](LICENSE)。
   确认 `data-theme` / `data-export-template` 正确、模板尺寸声明排在公共层之后（层叠生效）、
   分页规则与 `pre-wrap` 都在、深色主题导出 PDF 退回 `white`、就绪脚本只在 PDF/长图出现。
   `cargo check` 通过（本机需手工补 Windows SDK 的 INCLUDE/LIB，见「环境依赖」）。
+- 插入表格行列选择器：右键「插入 → 表格…」或 `Ctrl+Shift+T` 打开浮层，悬停网格 / 方向键 /
+  数字输入三种方式选尺寸（2–20 列、2–30 行，**行数含表头**），点击格或回车即插入；
+  插入的是**全空单元格**，不含「列 1」「内容」等占位文字，光标直接落在首个表头格。
+  `buildTableMarkdown()`（`table-model.js`）是纯函数，自检有 8 条断言（含全空表格仍被
+  `scanTables` 识别）；浮层交互另用无头浏览器跑了 18 条冒烟断言，全部通过。
+  Vite 生产构建通过（输出到临时目录验证，未清空 `dist/`）。
 

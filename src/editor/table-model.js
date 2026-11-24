@@ -12,6 +12,9 @@
  * 表格大小一致。下限 2 列 2 行，是因为渲染器要求至少 2 列，而 Markdown
  * 表格必须有一行表头；上限与选择器保持一致。
  *
+ * 单元格一律留空（只有 `---` 分隔行是语法，不是内容）：插进来就是一张
+ * 干净的空表，不需要先删掉「列 1」「内容」这类占位文字。
+ *
  * 纯字符串函数，不碰文档，便于自检直接断言。
  */
 export function buildTableMarkdown(cols, rows) {
@@ -22,8 +25,9 @@ export function buildTableMarkdown(cols, rows) {
   const c = clamp(cols, 2, 20);
   const r = clamp(rows, 2, 30);
   const line = (cell) => '| ' + Array.from({ length: c }, (_, i) => cell(i)).join(' | ') + ' |';
-  const lines = [line((i) => `列 ${i + 1}`), line(() => '---')];
-  for (let n = 1; n < r; n++) lines.push(line(() => '内容'));
+  const blank = () => '';
+  const lines = [line(blank), line(() => '---')];
+  for (let n = 1; n < r; n++) lines.push(line(blank));
   return lines.join('\n') + '\n';
 }
 

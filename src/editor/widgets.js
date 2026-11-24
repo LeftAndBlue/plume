@@ -564,6 +564,9 @@ export class TableWidget extends WidgetType {
         // 格子里的 `**粗**`、`` `code` ``、`$x^2$` 要渲染出来，不是把源码糊在脸上。
         // 点进格子时浮层编辑器仍然拿到原始 markdown（c.text），所见即所改。
         cell.appendChild(renderInline(c.text, { resolve: resolveSrc }));
+        // 空格子没有任何行盒，会塌成「只有 padding」的一小条，和填了内容的行
+        // 差出一整行的高度。打个标记，交给 CSS 用伪元素补一行（见 base.css）。
+        if (!c.text) cell.classList.add('is-empty');
         cell.dataset.col = String(i);
         // 交付给浮层编辑器：源码区间 + 表格上下文
         cell._cell = {
