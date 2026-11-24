@@ -1,9 +1,18 @@
 import { EditorView, WidgetType } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
-import { editTable, openCellEditor, tableCursorAt } from './table-edit.js';
+import { cancelCellEditor, editTable, openCellEditor, tableCursorAt } from './table-edit.js';
 import { renderInline, renderTex, isTexReady } from './inline-text.js';
 import { openLangMenu } from './lang-menu.js';
 import { setAlign, setTableColumnWidth } from './table-model.js';
+import {
+  bindTableSelectionDismiss,
+  getTableSelection,
+  paintTableSelection,
+  setTableSelection,
+  tableSelectionBounds,
+} from './table-selection.js';
+
+bindTableSelectionDismiss();
 
 /* ---------------- 资源路径解析 ---------------- */
 
@@ -556,6 +565,7 @@ export class TableWidget extends WidgetType {
     table.appendChild(colgroup);
     const thead = document.createElement('thead');
     const tbody = document.createElement('tbody');
+    const selBounds = tableSelectionBounds(this.lineNo);
 
     const buildRow = (r, cells, tag) => {
       const tr = document.createElement('tr');
@@ -567,6 +577,18 @@ export class TableWidget extends WidgetType {
         // 空格子没有任何行盒，会塌成「只有 padding」的一小条，和填了内容的行
         // 差出一整行的高度。打个标记，交给 CSS 用伪元素补一行（见 base.css）。
         if (!c.text) cell.classList.add('is-empty');
+        if (selBounds && r >= selBounds.r1 && r <= selBounds.r2 && i >= selBounds.c1 && i <= selBounds.c2) {
+          cell.classList.add('is-selected');
+        }
+        // 行首把手：点一下选整行，按住拖动选连续多行。绝对定位在第一列左边缘，
+        // 不新增表格列，列宽/对齐/复制逻辑都不用改。
+        if (i === 0) {
+          const rowsel = document.createElement('span');
+          rowsel.className = 'cm-table-rowsel';
+          rowsel.dataset.rowsel = String(r);
+          rowsel.title = '点击选中整行，按住拖动可连续选中多行';
+          cell.appendChild(rowsel);
+        }
         cell.dataset.col = String(i);
         // 交付给浮层编辑器：源码区间 + 表格上下文
         cell._cell = {
@@ -644,18 +666,82 @@ export class TableWidget extends WidgetType {
       });
     });
 
+    const lineNo = this.lineNo;
+    const paint = () => paintTableSelection(wrap, lineNo);
+    let drag = null;
+
+    /** 拖选时按坐标找格子；只认当前这张表，越过表格边界就忽略 */
+    const cellFromPoint = (x, y) => {
+      const el = document.elementFromPoint(x, y);
+      const c = el instanceof Element ? el.closest('td, th') : null;
+      return c && wrap.contains(c) && c._cell ? c : null;
+    };
+    const stopDrag = () => {
+      document.removeEventListener('mousemove', onMove, true);
+      document.removeEventListener('mouseup', onUp, true);
+    };
+    const onMove = (ev) => {
+      if (!drag) return;
+      const c = cellFromPoint(ev.clientX, ev.clientY);
+      if (!c) return;
+      const pos = { row: c._cell.row, col: c._cell.col };
+      // 同一格里的轻微抖动不算拖动，仍保留已经打开的就地编辑器
+      if (drag.mode === 'cell' && !drag.moved) {
+        if (pos.row === drag.start.row && pos.col === drag.start.col) return;
+        drag.moved = true;
+        // mousedown 时已经打开了这一格的编辑器；确认是拖动就丢掉它（内容未改），转为选区
+        cancelCellEditor();
+      }
+      if (drag.mode === 'row') {
+        setTableSelection(lineNo, { row: drag.anchorRow, col: 0 }, { row: pos.row, col: this.cols - 1 });
+      } else {
+        setTableSelection(lineNo, drag.start, pos);
+      }
+      paint();
+    };
+    const onUp = () => {
+      stopDrag();
+      drag = null;
+    };
+
     wrap.addEventListener('mousedown', (e) => {
       if (e.target instanceof Element && e.target.closest('.cm-table-toolbar')) return;
       e.preventDefault();
       const hit = e.target instanceof Element ? e.target.closest('td, th') : null;
-      if (hit && hit._cell) {
-        cursor = { row: hit._cell.row, col: hit._cell.col };
-        refreshAlign();
+      if (!hit || !hit._cell) return; // 点在边框或留白上不退回源码
+      cursor = { row: hit._cell.row, col: hit._cell.col };
+      refreshAlign();
+
+      // 行选择只认明确的把手元素。不要用 clientX 猜「左边缘」：
+      // 合成事件（自检）不带坐标，clientX=0 会把每个第一列格子都误判成把手。
+      const onHandle = e.target instanceof Element && e.target.classList.contains('cm-table-rowsel');
+      const prev = getTableSelection(lineNo);
+
+      if (onHandle) {
+        // 行首：一下选中整行；Shift 从上次锚点扩到这一行；按住拖动跨行选多行
+        const anchorRow = e.shiftKey && prev ? prev.anchor.row : hit._cell.row;
+        setTableSelection(lineNo, { row: anchorRow, col: 0 }, { row: hit._cell.row, col: this.cols - 1 });
+        paint();
+        drag = { mode: 'row', anchorRow };
+      } else if (e.shiftKey && prev) {
+        setTableSelection(lineNo, prev.anchor, { row: hit._cell.row, col: hit._cell.col });
+        paint();
+        drag = null;
+      } else {
+        drag = {
+          mode: 'cell',
+          start: { row: hit._cell.row, col: hit._cell.col },
+          moved: false,
+        };
+        // 单击语义不变：按下就打开就地编辑器（自检与外部驱动只发 mousedown）
         Promise.resolve(openCellEditor(view, hit)).catch((err) => {
           window.__cellErr = String((err && err.stack) || err);
         });
       }
-      // 点在边框或留白上不再退回源码。要看管道符，用工具条上的源码按钮，或从表格上下方用方向键穿入。
+      if (drag) {
+        document.addEventListener('mousemove', onMove, true);
+        document.addEventListener('mouseup', onUp, true);
+      }
     });
     return wrap;
   }

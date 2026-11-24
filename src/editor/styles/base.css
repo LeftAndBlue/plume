@@ -2403,6 +2403,28 @@ body.focus-mode .cm-editor .cm-content {
   content: "\200b";
 }
 
+/* 拖选 / Shift 扩选 / 整行选中的高亮，压过表头底色与斑马纹 */
+.cm-table-wrap th.is-selected,
+.cm-table-wrap td.is-selected {
+  background: var(--accent-soft);
+}
+
+/* 第一列左边缘的行选择把手：平时隐形，hover 才给出可点的提示。
+   绝对定位在 td 内，不新增表格列，列宽与对齐逻辑都不受影响。 */
+.cm-table-rowsel {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  cursor: pointer;
+}
+.cm-table-rowsel:hover {
+  background: var(--accent-soft);
+  border-right: 2px solid var(--accent);
+}
+
 .cm-table-resize {
   position: absolute;
   z-index: 3;

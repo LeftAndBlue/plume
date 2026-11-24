@@ -122,8 +122,16 @@ import {
   sortTableRows,
 } from "./table-model.js";
 import { openTablePicker } from "./table-picker.js";
+import {
+  clearTableSelection,
+  paintTableSelection,
+  selectedCols,
+  selectedRows,
+  setTableSelection,
+  tableSelectionBounds,
+} from "./table-selection.js";
 import { cancelCellEditor, commitCellEditor, editTable, formatTable } from "./table-edit.js";
-import { normalizeMarkdownText, parseImageAttrs } from "./rich-doc.js";
+import { normalizeMarkdownText, parseImageAttrs, splitTableRow } from "./rich-doc.js";
 import { useShellStore } from "../stores/shell.js";
 import { docBaseUrl, isTauri, localFileUrl } from "../platform/studio.js";
 
@@ -1739,11 +1747,35 @@ function tableContextItems(wrap, cell) {
   const col = info.col;
   const lastRow = Math.max(0, (info.rows || 1) - 1);
   const colCount = info.cols || 1;
-  const act = (mutate) => () => editTable(view, lineNo, mutate);
+  const bounds = tableSelectionBounds(lineNo);
+  const selRows = selectedRows(lineNo);
+  const selCols = selectedCols(lineNo);
+  const manyRows = selRows.length > 1;
+  const manyCols = selCols.length > 1;
+  // 结构改动后源码长度变了，旧选区坐标会失效，统一在改完就清掉
+  const act = (mutate) => () => {
+    clearTableSelection(lineNo);
+    return editTable(view, lineNo, mutate);
+  };
+  const select = (anchor, head) => () => {
+    setTableSelection(lineNo, anchor, head);
+    paintTableSelection(wrap, lineNo);
+  };
   const copyTable = () => {
     const from = Number(wrap.dataset.from);
     const to = Number(wrap.dataset.to);
-    return copyText(view.state.doc.sliceString(from, to), "表格 Markdown 已复制");
+    const full = view.state.doc.sliceString(from, to);
+    if (!bounds) return copyText(full, "表格 Markdown 已复制");
+    // 只复制选中矩形：源码行 0=表头、1=分隔行、2..=数据行；视觉行 r>0 对应源码行 r+1
+    const src = full.split("\n").filter((l) => l.trim());
+    const pick = (line) => {
+      const cells = splitTableRow(line).slice(bounds.c1, bounds.c2 + 1).map((c) => c.raw);
+      return "| " + cells.join(" | ") + " |";
+    };
+    const head = pick(src[0] || "");
+    const delim = pick(src[1] || "");
+    const body = selRows.filter((r) => r > 0).map((r) => pick(src[r + 1] || "")).filter(Boolean);
+    return copyText([head, delim, ...body].join("\n") + "\n", "已复制选中区域");
   };
   const deleteTable = () => {
     const from = Number(wrap.dataset.from);
@@ -1762,6 +1794,16 @@ function tableContextItems(wrap, cell) {
     formatTable(view, lineNo).then((ok) => flash(ok ? "表格源码已按列对齐" : "表格源码已经是整齐的"));
 
   return [
+    ...(bounds
+      ? [
+          { label: `已选中 ${selRows.length} 行 × ${selCols.length} 列`, disabled: true },
+          { label: "取消选择", action: () => { clearTableSelection(lineNo); paintTableSelection(wrap, lineNo); } },
+          { separator: true },
+        ]
+      : []),
+    { label: "选中整行", action: select({ row, col: 0 }, { row, col: colCount - 1 }) },
+    { label: "选中整列", action: select({ row: 0, col }, { row: lastRow, col }) },
+    { separator: true },
     {
       label: "插入行",
       children: [
@@ -1821,8 +1863,23 @@ function tableContextItems(wrap, cell) {
       ],
     },
     { separator: true },
-    { label: "删除行", disabled: lastRow <= 0, action: act((rows) => deleteTableRow(rows, row)) },
-    { label: "删除列", disabled: colCount <= 1, action: act((rows) => deleteTableCol(rows, col)) },
+    {
+      label: "删除行",
+      disabled: lastRow <= 0,
+      action: act((rows) => {
+        if (!manyRows) return deleteTableRow(rows, row);
+        // 降序删，前面的行号才不会因为删除而错位
+        for (const r of [...selRows].sort((a, b) => b - a)) deleteTableRow(rows, r);
+      }),
+    },
+    {
+      label: "删除列",
+      disabled: colCount <= 1,
+      action: act((rows) => {
+        if (!manyCols) return deleteTableCol(rows, col);
+        for (const c of [...selCols].sort((a, b) => b - a)) deleteTableCol(rows, c);
+      }),
+    },
     { label: "删除表格", danger: true, action: deleteTable },
     { separator: true },
     { label: "复制表格", action: copyTable },
