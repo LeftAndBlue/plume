@@ -2768,14 +2768,58 @@ async function uploadSavedImage(saved, candidates) {
   return true;
 }
 
+/**
+ * 图床模式的「询问」改用应用内面板。
+ * 原先走原生 blocking_show()：模态对话框会禁用整个主窗口，粘贴图片后
+ * 用户只看到界面冻住（弹窗还可能在别的窗口后面），像是卡死。
+ */
+function askUploadImage() {
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (v) => {
+      if (settled) return;
+      settled = true;
+      resolve(v);
+    };
+    openSheet(
+      "上传图片到图床",
+      (body, close) => {
+        const text = document.createElement("p");
+        text.className = "settings-note";
+        text.textContent = "刚插入的图片要上传到图床吗？上传成功后正文会换成远程地址，本地文件保留作备份。";
+        const row = document.createElement("div");
+        row.className = "ask-actions";
+        const group = document.createElement("div");
+        group.className = "ask-group";
+        for (const [label, value, kind] of [
+          ["上传", true, "primary"],
+          ["暂不上传", false, "ghost"],
+        ]) {
+          const b = document.createElement("button");
+          b.type = "button";
+          b.className = "btn-" + kind;
+          b.textContent = label;
+          b.addEventListener("click", () => {
+            done(value);
+            close();
+          });
+          group.appendChild(b);
+        }
+        row.append(group);
+        body.append(text, row);
+      },
+      { onClose: () => done(false) },
+    );
+  });
+}
+
 /** attachImage 落盘并插入本地引用后，按设置决定是否跟一次图床上传。 */
 function maybeUploadAfterAttach(saved, inserted) {
   const mode = imageUploadMode();
   if (mode !== "upload" && mode !== "ask") return;
   const run = async () => {
     if (mode === "ask") {
-      const ok = window.studio?.confirm ? await window.studio.confirm("把刚插入的图片上传到图床吗？") : false;
-      if (!ok) return;
+      if (!(await askUploadImage())) return;
     }
     // 同时尝试 abs / rel 两种写法：用户可能在保存文档时 rel 已替换过正文里的临时绝对路径
     await uploadSavedImage(saved, [inserted, saved.rel]);
