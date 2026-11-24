@@ -254,6 +254,7 @@ const editingTheme = EditorView.theme({
   ".cm-cursor, .cm-dropCursor": {
     borderLeftColor: "var(--caret)",
     borderLeftWidth: "2px",
+    borderRadius: "1px",
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, ::selection":
     {
@@ -1598,21 +1599,31 @@ function applyLinePrefix(prefixFn) {
     const b = s.doc.lineAt(r.to).number;
     for (let n = a; n <= b; n++) lines.add(n);
   }
+  const nos = [...lines].sort((x, y) => x - y);
   const changes = [];
-  let firstAnchor = null;
-  for (const n of lines) {
+  for (const n of nos) {
     const line = s.doc.line(n);
-    const stripped = line.text.replace(/^\s{0,3}#{1,6}\s+/, "");
+    const matched = /^\s{0,3}#{1,6}\s+/.exec(line.text);
+    const oldLen = matched ? matched[0].length : 0;
+    const stripped = line.text.slice(oldLen);
     const next = prefixFn(stripped);
-    if (next !== line.text)
-      changes.push({ from: line.from, to: line.to, insert: next });
-    if (firstAnchor === null) firstAnchor = line.from + next.length;
+    const newPrefix = next.slice(0, next.length - stripped.length);
+    if (next !== line.text) {
+      changes.push({ from: line.from, to: line.from + oldLen, insert: newPrefix });
+    }
   }
   if (!changes.length) return;
-  view.dispatch({
-    changes,
-    selection: { anchor: firstAnchor ?? s.selection.main.head },
-  });
+  const changeSet = s.changes(changes);
+  const selection = EditorSelection.create(
+    s.selection.ranges.map((r) =>
+      EditorSelection.range(
+        changeSet.mapPos(r.anchor, 1),
+        changeSet.mapPos(r.head, 1),
+      ),
+    ),
+    s.selection.mainIndex,
+  );
+  view.dispatch({ changes: changeSet, selection, scrollIntoView: true });
   view.focus();
 }
 
@@ -2213,6 +2224,15 @@ view.dom.addEventListener("contextmenu", (e) => {
     ]);
     return;
   }
+  // 无选区（或右键落在选区之外）时，先将光标移到点击位置再弹菜单
+  const clickPos = view.posAtCoords({ x: e.clientX, y: e.clientY });
+  if (clickPos != null) {
+    const main = view.state.selection.main;
+    const insideSel = !main.empty && clickPos >= main.from && clickPos <= main.to;
+    if (!insideSel) {
+      view.dispatch({ selection: { anchor: clickPos } });
+    }
+  }
   showContextMenu(e, baseEditorContextItems());
 });
 
@@ -2543,10 +2563,17 @@ function toggleLinePrefix(prefixFn) {
     else if (!m) changes.push({ from: line.from, insert: prefixFn.insert });
   }
   if (!changes.length) return;
-  view.dispatch({
-    changes,
-    selection: { anchor: view.state.selection.main.anchor },
-  });
+  const changeSet = s.changes(changes);
+  const selection = EditorSelection.create(
+    s.selection.ranges.map((r) =>
+      EditorSelection.range(
+        changeSet.mapPos(r.anchor, 1),
+        changeSet.mapPos(r.head, 1),
+      ),
+    ),
+    s.selection.mainIndex,
+  );
+  view.dispatch({ changes: changeSet, selection, scrollIntoView: true });
   view.focus();
 }
 
@@ -3344,9 +3371,12 @@ function flash(msg) {
 
 /* ---------------- 打字机模式 ---------------- */
 
+let typewriterRaf = 0;
 function maybeTypewriter() {
-  if (!state.typewriter) return;
-  requestAnimationFrame(() => {
+  if (!state.typewriter || typewriterRaf) return;
+  typewriterRaf = requestAnimationFrame(() => {
+    typewriterRaf = 0;
+    if (!state.typewriter) return;
     const head = view.state.selection.main.head;
     view.dispatch({
       effects: EditorView.scrollIntoView(head, { y: "center" }),

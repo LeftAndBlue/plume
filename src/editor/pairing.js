@@ -608,14 +608,17 @@ export const fenceDeletionGuard = EditorState.transactionFilter.of((tr) => {
 });
 
 /**
- * 删除配对标记后的统一落点（需求）：光标落到上一行末尾，而不是留在当前行。
- * 第一行没有上一行时用 fallback；changes 先经 mapPos 映射，落点不被删除量带偏。
+ * 删除配对标记后的落点：只有当删除后当前行完全为空时才回落到上一行末尾；
+ * 行内还有其他正文时留在 fallback（当前位置），避免打断句中编辑。
  */
 function pairDeleteAnchor(state, changes, pos, fallback) {
   const line = state.doc.lineAt(pos);
   if (line.number <= 1) return fallback;
+  const tr = state.update({ changes });
+  const mappedLine = tr.newDoc.lineAt(tr.changes.mapPos(pos, -1));
+  if (mappedLine.text.trim().length > 0) return fallback;
   const prevEnd = state.doc.line(line.number - 1).to;
-  return state.update({ changes }).changes.mapPos(prevEnd);
+  return tr.changes.mapPos(prevEnd);
 }
 
 /**
@@ -704,7 +707,12 @@ export function deleteInlinePair(view, forward) {
     { from: node.from, to: node.from + mark },
     { from: node.to - mark, to: node.to },
   ];
-  anchor = pairDeleteAnchor(state, changes, pos, anchor);
+  if (node.name === 'InlineCode') {
+    // 有内容的行内代码删掉反引号后，光标留在当前内容后面，不跳到上一行
+    anchor = node.to - mark * 2;
+  } else {
+    anchor = pairDeleteAnchor(state, changes, pos, anchor);
+  }
 
   view.dispatch({
     changes,

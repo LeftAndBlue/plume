@@ -828,3 +828,13 @@ body.sidebar-dragging #workspace {
   line-height: 1.7;
   font-size: 13px;
 }
+
+.cm-cursor-primary {
+  transition: left 60ms ease-out, top 60ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cm-cursor-primary {
+    transition: none;
+  }
+}

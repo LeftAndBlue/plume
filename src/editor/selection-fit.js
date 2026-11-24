@@ -58,9 +58,8 @@ function globalSides(view) {
   };
 }
 
-function snapSides(marker, view) {
+function snapSides(marker, view, sides) {
   if (marker.width == null) return marker;
-  const sides = globalSides(view);
   const openL = Math.abs(marker.left - sides.left) < 0.5;
   const openR = Math.abs(marker.left + marker.width - sides.right) < 0.5;
   if (!openL && !openR) return marker;
@@ -145,11 +144,12 @@ function clipMarker(marker, bands) {
 
 function fitSelectionMarkers(view) {
   const bands = codeBands(view);
+  const sides = globalSides(view);
   const pieces = [];
   for (const range of view.state.selection.ranges) {
     if (range.empty) continue;
     for (const marker of RectangleMarker.forRange(view, 'cm-selectionBackground', range)) {
-      pieces.push(...clipMarker(snapSides(marker, view), bands));
+      pieces.push(...clipMarker(snapSides(marker, view, sides), bands));
     }
   }
   return pieces;

@@ -27,7 +27,8 @@ function caretKind(el) {
 }
 
 function glyphRect(view, line) {
-  for (let pos = line.from; pos < line.to; pos++) {
+  const limit = Math.min(line.to, line.from + 32);
+  for (let pos = line.from; pos < limit; pos++) {
     const rect = view.coordsForChar(pos);
     if (rect && rect.bottom - rect.top > 1) return rect;
   }
@@ -45,9 +46,9 @@ function metrics(el, fallbackSize) {
 }
 
 /** 代码光标使用所在代码行的坐标和行高，自动换行后仍落在当前视觉行。 */
-function codeCaretBox(view, el, head) {
+function codeCaretBox(view, el, head, assoc = 1) {
   const { lineHeight } = metrics(el, 14);
-  const here = view.coordsAtPos(head);
+  const here = view.coordsAtPos(head, assoc);
   if (!here) return null;
   const boxH = here.bottom - here.top;
   const height = boxH > 1 && boxH < lineHeight * 1.8 ? Math.min(boxH, lineHeight) : lineHeight;
@@ -56,17 +57,17 @@ function codeCaretBox(view, el, head) {
 }
 
 /** 正文优先使用当前 head 的坐标；异常小盒子回退到正文字形或行盒。 */
-function bodyCaretBox(view, line, el, head) {
+function bodyCaretBox(view, line, el, head, assoc = 1) {
   const host = el || view.contentDOM;
   const { fontSize, lineHeight, padTop, borderTop } = metrics(host, 16);
-  // 空行（含空文档的 placeholder 行）：coordsAtPos 返回的是 content 顶部附近的估算盒，
-  // 比真实行盒高出一截，光标会飘到「开始写点什么」上方。空行直接按行盒顶对齐。
+  // 空行（含空文档的 placeholder 行）：按正文字形高度居中，避免从有字行回车到空行时光标突然拉长。
   if (line.length === 0 && el) {
     const rect = el.getBoundingClientRect();
-    const top = rect.top + borderTop + padTop;
-    return { top, bottom: top + lineHeight };
+    const height = Math.min(lineHeight, fontSize * 1.25);
+    const top = rect.top + borderTop + padTop + Math.max(0, (lineHeight - height) / 2);
+    return { top, bottom: top + height };
   }
-  const here = view.coordsAtPos(head);
+  const here = view.coordsAtPos(head, assoc);
   const boxH = here ? here.bottom - here.top : 0;
   // 空标题的坐标可能来自左侧 # 徽章（只有 11px），不能当成正文字形。
   if (here && boxH >= fontSize * 0.75) {
@@ -90,12 +91,14 @@ function bodyCaretBox(view, line, el, head) {
   return { top, bottom: top + fontSize };
 }
 
-function caretBox(view, head) {
+function caretBox(view, head, assoc = 1) {
   const line = view.state.doc.lineAt(head);
   const el = lineElementAt(view, line.from);
   const kind = caretKind(el);
   if (kind === 'fence') return null;
-  const box = kind === 'code' ? codeCaretBox(view, el, head) : bodyCaretBox(view, line, el, head);
+  const box = kind === 'code'
+    ? codeCaretBox(view, el, head, assoc)
+    : bodyCaretBox(view, line, el, head, assoc);
   return box ? { kind, top: box.top, bottom: box.bottom } : null;
 }
 
@@ -132,10 +135,11 @@ class CaretFit {
     for (const range of this.view.state.selection.ranges) {
       if (!range.empty) continue;
       // coordsAtPos 为空时 CM 自己也不会画这个视口外光标。
-      const here = this.view.coordsAtPos(range.head);
+      const assoc = range.assoc || 1;
+      const here = this.view.coordsAtPos(range.head, assoc);
       if (!here) continue;
       const primary = range === this.view.state.selection.main;
-      const box = caretBox(this.view, range.head);
+      const box = caretBox(this.view, range.head, assoc);
       cursors.push({
         primary,
         secondaryIndex: primary ? -1 : secondaryIndex++,

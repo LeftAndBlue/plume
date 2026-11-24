@@ -18,9 +18,9 @@
 
   --editor-font-size: 16px;
   --line-height: 1.75;
-  --para-spacing: 0.8em;
-  --block-gap: 14px;
-  --content-width: 800px;
+  --para-spacing: 0.85em;
+  --block-gap: 18px;
+  --content-width: 750px;
   /* 正文栏两侧的留白。必须挂在 .cm-line 上而不是 .cm-content 上，原因见该处的注释 */
   --gutter-x: 44px;
   --para-indent: 0em;
@@ -1350,11 +1350,11 @@ body[data-side="outline"] #outline {
   max-width: var(--content-width);
   /* 横向留白不在这儿，见下面 .cm-line 的注释。
      底部 50vh 让最后一行可以停在屏幕中上部，不必贴着状态栏。 */
-  padding: 44px 0 50vh;
+  padding: 54px 0 50vh;
   font-family: var(--font-body);
   font-size: var(--editor-font-size);
   line-height: var(--line-height);
-  letter-spacing: 0.008em;
+  letter-spacing: 0.015em;
   font-feature-settings: "kern" 1, "liga" 1, "cv02", "cv03", "cv04", "cv11";
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -1459,16 +1459,20 @@ body.focus-mode .cm-editor .cm-content {
    而且只写上下，左右那 40px 正文栏留白不能动。 */
 .cm-editor .cm-line.cm-h1 {
   font-size: 1.85em;
+  font-weight: 700;
+  letter-spacing: -0.008em;
   line-height: 1.3;
   text-align: var(--h1-align, left);
-  padding-top: 0.9em;
+  padding-top: 1.2em;
   padding-bottom: 0.35em;
 }
 .cm-editor .cm-line.cm-h2 {
   font-size: 1.5em;
+  font-weight: 700;
+  letter-spacing: -0.005em;
   line-height: 1.35;
-  padding-top: 0.85em;
-  padding-bottom: 0.28em;
+  padding-top: 1.15em;
+  padding-bottom: 0.25em;
 }
 
 /* 分隔线只画在正文栏里。挂在整行的 box-shadow 会顺着左右留白伸出去。 */
@@ -1483,11 +1487,14 @@ body.focus-mode .cm-editor .cm-content {
   background: var(--h-rule, var(--border));
   pointer-events: none;
 }
+.cm-editor .cm-line.cm-h2::after {
+  opacity: 0.45;
+}
 .cm-editor .cm-line.cm-h3 {
   font-size: 1.25em;
   line-height: 1.4;
-  padding-top: 0.7em;
-  padding-bottom: 0.18em;
+  padding-top: 0.95em;
+  padding-bottom: 0.2em;
 }
 .cm-editor .cm-line.cm-h4 {
   font-size: 1.1em;
@@ -1526,11 +1533,11 @@ body.focus-mode .cm-editor .cm-content {
 
 .cm-inline-code {
   font-family: var(--font-mono);
-  font-size: var(--code-font-size);
+  font-size: 0.86em;
   letter-spacing: 0;
   background: var(--code-bg);
   color: var(--code-text);
-  border: 1px solid var(--code-border);
+  border: 1px solid color-mix(in srgb, var(--code-border) 50%, transparent);
   border-radius: var(--radius-sm);
   margin: 0 0.18em;
   padding: 0.12em 0.38em;
@@ -1595,7 +1602,7 @@ body.focus-mode .cm-editor .cm-content {
   margin-left: -1.5em;
   text-align: right;
   padding-right: 0.35em;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--text-muted) 72%, var(--accent));
   font-weight: 600;
   white-space: nowrap;
   user-select: none;
@@ -1608,8 +1615,8 @@ body.focus-mode .cm-editor .cm-content {
 
 .cm-li {
   /* 同类列表项之间留一点缝，靠行内 padding，CM 量得到 */
-  padding-top: 2px;
-  padding-bottom: 2px;
+  padding-top: 3px;
+  padding-bottom: 3px;
 }
 
 .cm-list-first,
@@ -1621,6 +1628,14 @@ body.focus-mode .cm-editor .cm-content {
 .cm-list-last,
 .cm-quote-last {
   border-bottom: var(--block-gap) solid var(--bg);
+}
+
+.cm-quote-first {
+  padding-top: 8px;
+}
+
+.cm-quote-last {
+  padding-bottom: 8px;
 }
 
 /* 列表与引用正文之间不再额外垫一圈 border。
@@ -1718,30 +1733,30 @@ body.focus-mode .cm-editor .cm-content {
   font-variant-ligatures: contextual;
   font-feature-settings: "calt" 1, "liga" 1;
   tab-size: 2;
-  padding-left: 16px !important;
-  padding-right: 16px !important;
+  padding-left: 18px !important;
+  padding-right: 18px !important;
   border-left: 1px solid var(--code-border);
   border-right: 1px solid var(--code-border);
 }
 
 .cm-code-first {
-  /* 8px 是代码框内边距，10px 是框外间隔；inset shadow 补上原来的 1px 顶边框。 */
+  /* 12px 是代码框内边距，--block-gap 是框外间隔；inset shadow 补上原来的 1px 顶边框。 */
   border-top: var(--block-gap) solid var(--bg);
   border-radius: 8px 8px 0 0;
-  padding-top: 8px !important;
+  padding-top: 12px !important;
   box-shadow: inset 0 1px 0 var(--code-border);
 }
 
 .cm-code-last {
   border-bottom: var(--block-gap) solid var(--bg);
   border-radius: 0 0 8px 8px;
-  padding-bottom: 8px !important;
+  padding-bottom: 12px !important;
   box-shadow: inset 0 -1px 0 var(--code-border);
 }
 
 .cm-code-first.cm-code-last {
   border-radius: 8px;
-  padding-bottom: 8px !important;
+  padding-bottom: 12px !important;
   box-shadow: inset 0 1px 0 var(--code-border), inset 0 -1px 0 var(--code-border);
 }
 
@@ -1827,7 +1842,7 @@ body.focus-mode .cm-editor .cm-content {
   counter-increment: cm-code-ln;
   position: relative;
   padding-left: 64px !important;
-  padding-right: 16px !important;
+  padding-right: 18px !important;
 }
 
 :root[data-code-ln="1"] .cm-code-first {
@@ -1873,7 +1888,7 @@ body.focus-mode .cm-editor .cm-content {
 
 .cm-code-body-last {
   border-radius: 0 0 8px 8px;
-  padding-bottom: 8px !important;
+  padding-bottom: 12px !important;
   box-shadow: inset 0 -1px 0 var(--code-border);
 }
 
@@ -2634,12 +2649,12 @@ body > div[id^="dmermaid"] {
 }
 
 .cm-editor .cm-line.cm-para-last {
-  padding-bottom: var(--para-spacing, 0.8em);
+  padding-bottom: var(--para-spacing, 0.85em);
 }
 
 .cm-editor .cm-line.cm-blank {
-  font-size: 10px;
-  line-height: 1;
+  font-size: var(--editor-font-size);
+  line-height: 1.4;
 }
 
 /* 光标停在空行上时恢复正文行高，段后距已经在上一行拿掉，避免上边空出一大截。 */

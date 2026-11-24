@@ -21,10 +21,10 @@ const DEFAULT_PREFS = {
   fontSize: 16,
   density: 'comfortable',
   lineHeight: 1.75,
-  paraEm: 0.8,
-  blockPx: 14,
+  paraEm: 0.85,
+  blockPx: 18,
   pageWidth: 'standard',
-  contentPx: 800,
+  contentPx: 750,
   codePx: 0,
   firstLineIndent: false,
   codeLineNumbers: true,
@@ -34,15 +34,15 @@ const DEFAULT_PREFS = {
 };
 
 const DENSITY_MAP = {
-  compact: { lineHeight: '1.62', paraSpacing: '0.45em', blockGap: '8px' },
-  comfortable: { lineHeight: '1.75', paraSpacing: '0.8em', blockGap: '14px' },
-  loose: { lineHeight: '1.9', paraSpacing: '1.15em', blockGap: '20px' },
+  compact: { lineHeight: '1.62', paraSpacing: '0.5em', blockGap: '10px' },
+  comfortable: { lineHeight: '1.75', paraSpacing: '0.85em', blockGap: '18px' },
+  loose: { lineHeight: '1.9', paraSpacing: '1.15em', blockGap: '24px' },
 };
 
 const WIDTH_MAP = {
-  narrow: '720px',
-  standard: '800px',
-  wide: '960px',
+  narrow: '680px',
+  standard: '750px',
+  wide: '880px',
   full: '100%',
 };
 
@@ -105,7 +105,7 @@ function loadAppearance() {
   }
   if (!saved || saved.contentPx == null) {
     const width = WIDTH_MAP[currentPrefs.pageWidth] || WIDTH_MAP.standard;
-    currentPrefs.contentPx = width.endsWith('px') ? parseInt(width, 10) : 800;
+    currentPrefs.contentPx = width.endsWith('px') ? parseInt(width, 10) : 750;
   }
   applyAppearance();
   return getAppearance();
@@ -166,10 +166,10 @@ function applyAppearance() {
   document.body.dataset.mode = isDarkTheme(p.theme) ? 'dark' : 'light';
 
   root.style.setProperty('--editor-font-size', `${p.fontSize}px`);
-  root.style.setProperty('--content-width', p.pageWidth === 'full' ? '100%' : `${p.contentPx || 800}px`);
+  root.style.setProperty('--content-width', p.pageWidth === 'full' ? '100%' : `${p.contentPx || 750}px`);
   root.style.setProperty('--line-height', String(p.lineHeight || 1.75));
-  root.style.setProperty('--para-spacing', `${p.paraEm ?? 0.8}em`);
-  root.style.setProperty('--block-gap', `${p.blockPx ?? 14}px`);
+  root.style.setProperty('--para-spacing', `${p.paraEm ?? 0.85}em`);
+  root.style.setProperty('--block-gap', `${p.blockPx ?? 18}px`);
   root.style.setProperty('--para-indent', p.firstLineIndent ? '2em' : '0em');
   if (p.codePx) root.style.setProperty('--code-font-size', `${p.codePx}px`);
   else root.style.setProperty('--code-font-size', '0.875em');

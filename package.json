@@ -1,6 +1,6 @@
 {
   "name": "plume",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "Plume — Typora-like WYSIWYG Markdown editor built on Tauri + Rust + Vue + CodeMirror 6",
   "license": "MIT",
