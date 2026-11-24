@@ -113,7 +113,17 @@ export function normAccel(text) {
   return [...MODS.filter((m) => mods.has(m)), key].join('+');
 }
 
-/** 帮助里「快捷键一览」的正文（对话框 detail 用） */
+/** 帮助面板用的结构化数据：分组 + 条目 + 补充说明，和菜单加速键同源 */
+export function shortcutGroups() {
+  return SHORTCUTS.map((g) => ({ group: g.group, items: g.items.map((i) => ({ ...i })) }));
+}
+
+/** 帮助面板底部的补充提示（同样来自唯一声明处） */
+export function shortcutNotes() {
+  return [...KEY_NOTES];
+}
+
+/** 帮助里「快捷键一览」的正文（旧版原生对话框/detail 用，保留兼容） */
 export function shortcutText() {
   const lines = SHORTCUTS.map((g) => {
     const pad = g.group.length < 3 ? '　' : '';

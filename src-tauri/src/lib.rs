@@ -148,23 +148,32 @@ fn theme_open_folder(app: AppHandle) -> Result<bool, String> {
 
 /* ---------------- 文档读写 ---------------- */
 
+/// 文件对话框统一走「回调式 API + 线程池等待」：同步命令里调用 blocking_* 会
+/// 占住 WebView 主线程，对话框的完成回调永远派发不回来，界面直接冻结。
 #[tauri::command]
-fn file_open(app: AppHandle) -> Result<Option<fs_ops::Doc>, String> {
-    let file = app
-        .dialog()
+async fn file_open(app: AppHandle) -> Result<Option<fs_ops::Doc>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
         .file()
         .add_filter("Markdown", &["md", "markdown", "txt"])
         .add_filter("所有文件", &["*"])
-        .blocking_pick_file();
-    match file {
-        Some(f) => {
-            let path = f.into_path().map_err(|e| e.to_string())?;
-            fs_ops::read_doc(&path.to_string_lossy())
-                .map(Some)
-                .map_err(cmd_err)
-        }
-        None => Ok(None),
-    }
+        .pick_file(move |f| {
+            let _ = tx.send(f.and_then(|f| f.into_path().ok()));
+        });
+    let path = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        fs_ops::read_doc(&path.to_string_lossy())
+            .map(Some)
+            .map_err(cmd_err)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -174,22 +183,29 @@ fn file_read(p: String) -> Result<fs_ops::Doc, String> {
 
 /// 设置导入：挑一个 JSON 文件并读回文本（设置备份统一 UTF-8）。
 #[tauri::command]
-fn settings_import_pick(app: AppHandle) -> Result<Option<String>, String> {
-    let file = app
-        .dialog()
+async fn settings_import_pick(app: AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
         .file()
         .add_filter("Plume 设置", &["json"])
-        .blocking_pick_file();
-    match file {
-        Some(f) => {
-            let path = f.into_path().map_err(|e| e.to_string())?;
-            let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
-            String::from_utf8(bytes)
-                .map(Some)
-                .map_err(|_| "设置文件不是有效的 UTF-8 文本".to_string())
-        }
-        None => Ok(None),
-    }
+        .pick_file(move |f| {
+            let _ = tx.send(f.and_then(|f| f.into_path().ok()));
+        });
+    let path = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    tauri::async_runtime::spawn_blocking(move || {
+        let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+        String::from_utf8(bytes)
+            .map(Some)
+            .map_err(|_| "设置文件不是有效的 UTF-8 文本".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
@@ -208,30 +224,40 @@ fn file_save(app: AppHandle, p: String, c: String, enc: Option<String>) -> Resul
 }
 
 #[tauri::command]
-fn file_save_as(app: AppHandle, c: String, s: Option<String>) -> Result<Option<String>, String> {
+async fn file_save_as(app: AppHandle, c: String, s: Option<String>) -> Result<Option<String>, String> {
     // 新文档从未保存过时前端没有路径可传，s 会缺省；缺省必须给默认文件名，
     // 否则「另存为」直接以 invalid args 报错（发布后被最多人踩到的路径）。
     let name = s
         .as_deref()
         .filter(|v| !v.trim().is_empty())
         .unwrap_or("未命名.md");
-    let file = app
-        .dialog()
+    // 不能用 blocking_save_file：同步命令里它会模态占住 UI 主线程，
+    // 选完目录后对话框回调无法回到消息循环，界面永久冻结（只能强杀进程）。
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
         .file()
         .set_title("另存为")
         .add_filter("Markdown", &["md", "markdown"])
         .set_file_name(name)
-        .blocking_save_file();
-    match file {
-        Some(f) => {
-            let path = f.into_path().map_err(|e| e.to_string())?;
-            // 另存为新文件统一写 UTF-8（前端随后也会把文档编码标记重置为 utf-8）。
-            let out = fs_ops::write_text_atomic(&path.to_string_lossy(), &c).map_err(cmd_err)?;
-            watch::note_self_write(&app, &out);
-            Ok(Some(out))
-        }
-        None => Ok(None),
-    }
+        .save_file(move |f| {
+            let _ = tx.send(f.and_then(|f| f.into_path().ok()));
+        });
+    let path = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten();
+    let Some(path) = path else {
+        return Ok(None);
+    };
+    // 落盘也放线程池：原子写里有 fsync，慢盘上不该阻塞 UI。
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        // 另存为新文件统一写 UTF-8（前端随后也会把文档编码标记重置为 utf-8）。
+        fs_ops::write_text_atomic(&path.to_string_lossy(), &c).map_err(cmd_err)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    watch::note_self_write(&app, &out);
+    Ok(Some(out))
 }
 
 /* ---------------- 文件树 / 搜索 / 监听 ---------------- */
@@ -423,29 +449,40 @@ async fn export_file(app: AppHandle, payload: exports::ExportFilePayload) -> Res
 
 /* ---------------- 系统对话框 ---------------- */
 
+// 系统消息框同样不用 blocking_show：同步命令里它会冻住 UI 消息循环。
 #[tauri::command]
-fn dialog_confirm(app: AppHandle, m: String) -> Result<bool, String> {
+async fn dialog_confirm(app: AppHandle, m: String) -> Result<bool, String> {
     use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
-    Ok(app
-        .dialog()
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
         .message(m)
         .title("确认")
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancel)
-        .blocking_show())
+        .show(move |answer| {
+            let _ = tx.send(answer);
+        });
+    Ok(tauri::async_runtime::spawn_blocking(move || rx.recv().unwrap_or(false))
+        .await
+        .unwrap_or(false))
 }
 
 #[tauri::command]
-fn dialog_unsaved(app: AppHandle) -> Result<String, String> {
+async fn dialog_unsaved(app: AppHandle) -> Result<String, String> {
     use tauri_plugin_dialog::{MessageDialogButtons, MessageDialogKind};
     // Yes = 保存，No = 不保存，Cancel = 取消
-    let save = app
-        .dialog()
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
         .message("当前文档有未保存的修改。\n选择「是」保存后关闭，「否」放弃修改。")
         .title("Plume")
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::YesNoCancel)
-        .blocking_show();
+        .show(move |answer| {
+            let _ = tx.send(answer);
+        });
+    let save = tauri::async_runtime::spawn_blocking(move || rx.recv().unwrap_or(false))
+        .await
+        .unwrap_or(false);
     Ok(if save { "save" } else { "discard" }.to_string())
 }
 
@@ -457,15 +494,21 @@ struct InfoPayload {
 }
 
 #[tauri::command]
-fn dialog_info(app: AppHandle, payload: InfoPayload) -> Result<bool, String> {
+async fn dialog_info(app: AppHandle, payload: InfoPayload) -> Result<bool, String> {
     let text = match payload.detail {
         Some(d) if !d.is_empty() => format!("{}\n\n{}", payload.message, d),
         _ => payload.message,
     };
+    let (tx, rx) = std::sync::mpsc::channel();
     app.dialog()
         .message(text)
         .title(payload.title.unwrap_or_else(|| "Plume".to_string()))
-        .blocking_show();
+        .show(move |_| {
+            let _ = tx.send(());
+        });
+    let _ = tauri::async_runtime::spawn_blocking(move || rx.recv())
+        .await
+        .ok();
     Ok(true)
 }
 

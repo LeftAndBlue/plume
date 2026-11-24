@@ -70,7 +70,11 @@ import {
 import { detectCode, pasteAsCodeBlock } from "./paste-code.js";
 import { renderSelectionForClipboard } from "./clipboard.js";
 import { createMenubar } from "./menubar.js";
-import { ACCEL, shortcutText } from "./shortcuts.js";
+import {
+  ACCEL,
+  shortcutGroups,
+  shortcutNotes,
+} from "./shortcuts.js";
 import { slugify } from "./slugify.js";
 import { createQuickOpen } from "./quick-open.js";
 import { createSettingsBackup } from "./settings-backup.js";
@@ -3464,6 +3468,7 @@ function openSheet(title, content, options) {
   const heading = document.getElementById("settings-title");
   if (!panel || !body) return;
   if (heading) heading.textContent = title;
+  panel.querySelector('.settings-card')?.classList.toggle("is-wide", !!options?.wide);
   sheetOnClose = typeof options?.onClose === "function" ? options.onClose : null;
   body.replaceChildren();
   if (typeof content === "function") content(body, closeSettings);
@@ -3910,7 +3915,7 @@ const commands = {
     const ok = await window.studio?.openThemeFolder?.();
     if (ok === false) flash("无法打开主题目录");
   },
-  shortcuts: () => showInfo(SHORTCUTS_DOC),
+  shortcuts: openShortcuts,
   "check-update": () => updater.checkForUpdate(),
   about: async () => {
     const info = (await window.studio?.info?.()) || {};
@@ -4017,12 +4022,54 @@ function clearFormat() {
   view.focus();
 }
 
-// 内容来自 shortcuts.js，和菜单加速键同一份数据 —— 不再手写第二份文案
-const SHORTCUTS_DOC = {
-  title: "快捷键",
-  message: "Plume 快捷键",
-  detail: shortcutText(),
-};
+/** 结构化快捷键面板：分组标题 + 「键位 / 说明」网格，不再是一长串点号文本 */
+function openShortcuts() {
+  openSheet(
+    t("menu.shortcuts"),
+    (body) => {
+      body.classList.add("shortcut-sheet");
+      const groups = document.createElement("div");
+      groups.className = "shortcut-groups";
+      for (const g of shortcutGroups()) {
+        const section = document.createElement("section");
+        section.className = "shortcut-group";
+        const title = document.createElement("h3");
+        title.textContent = g.group;
+        section.appendChild(title);
+        const list = document.createElement("div");
+        list.className = "shortcut-list";
+        for (const item of g.items) {
+          const row = document.createElement("div");
+          row.className = "shortcut-row";
+          const key = document.createElement("kbd");
+          key.className = "shortcut-key";
+          key.textContent = item.keys || "";
+          const label = document.createElement("span");
+          label.className = "shortcut-label";
+          label.textContent = item.label;
+          row.append(key, label);
+          list.appendChild(row);
+        }
+        section.appendChild(list);
+        groups.appendChild(section);
+      }
+      const notes = document.createElement("section");
+      notes.className = "shortcut-notes";
+      const noteTitle = document.createElement("h3");
+      noteTitle.textContent = t("shortcuts.notes");
+      notes.appendChild(noteTitle);
+      const noteList = document.createElement("ul");
+      for (const text of shortcutNotes()) {
+        const li = document.createElement("li");
+        li.textContent = text;
+        noteList.appendChild(li);
+      }
+      notes.appendChild(noteList);
+      body.append(groups, notes);
+    },
+    { wide: true },
+  );
+}
 
 /** 桌面端用系统消息框（原生），浏览器里退化成 alert */
 async function showInfo(payload) {
