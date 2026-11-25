@@ -10,7 +10,14 @@ import {
   buildTableMarkdown,
   insertTableRow,
   deleteTableCol,
+  clearTableCells,
+  formatTableCells,
+  moveTableColsBlock,
+  moveTableRowsBlock,
+  pasteTableCells,
+  serializeTableSelection,
   setAlign,
+  setAlignCols,
 } from '../src/editor/table-model.js';
 import {
   EMOJI_LIST,
@@ -752,4 +759,61 @@ test('盲打图片 ![alt](a|) 时光标在语法内部不触发过早替换，�
   // 光标跳出 `)` 到 `![图](a)|`（pos=8）或在开头（pos=0）-> 正常渲染 ImageWidget
   assert.equal(isCursorStrictlyInside([{ from: 8, to: 8 }], 0, 8), false);
   assert.equal(isCursorStrictlyInside([{ from: 0, to: 0 }], 0, 8), false);
+});
+
+test('表格多选批量操作：清空、格式切换、批量对齐、整块移动、序列化与粘贴填充', () => {
+  const rows = [
+    ['列A', '列B', '列C'],
+    ['---', '---', '---'],
+    ['1', '2', '3'],
+    ['4', '5', '6'],
+    ['7', '8', '9'],
+  ];
+
+  // 批量加粗选中矩形 (视觉行 1..2, 列 0..1 -> '1','2','4','5')
+  assert.equal(formatTableCells(rows, { r1: 1, r2: 2, c1: 0, c2: 1 }, '**'), true);
+  assert.equal(rows[2][0], '**1**');
+  assert.equal(rows[3][1], '**5**');
+  assert.equal(rows[2][2], '3'); // 未选中不受影响
+  // 再次执行统一取消加粗
+  assert.equal(formatTableCells(rows, { r1: 1, r2: 2, c1: 0, c2: 1 }, '**'), true);
+  assert.equal(rows[2][0], '1');
+  assert.equal(rows[3][1], '5');
+
+  // 批量设置多列居中对齐
+  assert.equal(setAlignCols(rows, [0, 2], 'center'), true);
+  assert.deepEqual(rows[1], [':---:', '---', ':---:']);
+
+  // 序列化选区（TSV / Markdown / HTML）
+  const ser = serializeTableSelection(rows, { r1: 1, r2: 2, c1: 0, c2: 1 });
+  assert.equal(ser.tsv, '1\t2\n4\t5');
+  assert.ok(ser.html.includes('<td>1</td><td>2</td>'));
+
+  // 清空选中单元格
+  assert.equal(clearTableCells(rows, { r1: 1, r2: 2, c1: 0, c2: 1 }), true);
+  assert.equal(rows[2][0], '');
+  assert.equal(rows[3][1], '');
+  assert.equal(rows[4][0], '7');
+
+  // 单值粘贴批量填充选区
+  assert.equal(pasteTableCells(rows, { r1: 1, r2: 2, c1: 0, c2: 1 }, 'OK'), true);
+  assert.equal(rows[2][0], 'OK');
+  assert.equal(rows[3][1], 'OK');
+
+  // 多行多列 TSV 粘贴覆盖
+  assert.equal(pasteTableCells(rows, { r1: 1, r2: 1, c1: 0, c2: 0 }, 'a\tb\nc\td'), true);
+  assert.equal(rows[2][0], 'a');
+  assert.equal(rows[2][1], 'b');
+  assert.equal(rows[3][0], 'c');
+  assert.equal(rows[3][1], 'd');
+
+  // 整块下移选中的第 1..2 数据行（[a,b,3] 和 [c,d,6] 移到 [7,8,9] 下面）
+  assert.equal(moveTableRowsBlock(rows, [1, 2], 1), true);
+  assert.equal(rows[2][0], '7');
+  assert.equal(rows[3][0], 'a');
+  assert.equal(rows[4][0], 'c');
+
+  // 整块右移选中的第 0..1 列
+  assert.equal(moveTableColsBlock(rows, [0, 1], 1), true);
+  assert.deepEqual(rows[0], ['列C', '列A', '列B']);
 });

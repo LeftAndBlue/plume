@@ -26,6 +26,15 @@ export function tableSelectionBounds(lineNo) {
   };
 }
 
+/** 返回当前任意存在多选区的表格 `{ lineNo, bounds }`（全局快捷键使用）。 */
+export function getActiveTableSelection() {
+  for (const [lineNo] of selections.entries()) {
+    const bounds = tableSelectionBounds(lineNo);
+    if (bounds) return { lineNo, bounds };
+  }
+  return null;
+}
+
 export function setTableSelection(lineNo, anchor, head = anchor) {
   selections.set(lineNo, { anchor: norm(anchor), head: norm(head) });
 }
@@ -62,7 +71,7 @@ export function paintTableSelection(wrap, lineNo) {
   }
 }
 
-/** 点表格外就取消选择：全局只挂一次，避免每个 widget 都留一份监听 */
+/** 点表格外就取消选择：全局只挂一次；点击右键菜单或格式浮条时不提前清空选区。 */
 let dismissBound = false;
 export function bindTableSelectionDismiss() {
   if (dismissBound || typeof document === 'undefined') return;
@@ -70,7 +79,12 @@ export function bindTableSelectionDismiss() {
   document.addEventListener(
     'mousedown',
     (e) => {
-      if (e.target instanceof Element && e.target.closest('.cm-table-wrap')) return;
+      if (
+        e.target instanceof Element &&
+        e.target.closest('.cm-table-wrap, .ft-context, .app-context, .fmt-pop')
+      ) {
+        return;
+      }
       if (!selections.size) return;
       selections.clear();
       for (const el of document.querySelectorAll('.cm-table-wrap .is-selected')) {

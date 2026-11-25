@@ -4,11 +4,12 @@ import { cancelCellEditor, editTable, openCellEditor, tableCursorAt } from './ta
 import { renderInline, renderTex, isTexReady } from './inline-text.js';
 import { updateImageWidthAttr } from './extrasText.js';
 import { openLangMenu } from './lang-menu.js';
-import { setAlign, setTableColumnWidth } from './table-model.js';
+import { setAlign, setAlignCols, setTableColumnWidth } from './table-model.js';
 import {
   bindTableSelectionDismiss,
   getTableSelection,
   paintTableSelection,
+  selectedCols,
   setTableSelection,
   tableSelectionBounds,
 } from './table-selection.js';
@@ -596,33 +597,45 @@ export class TableWidget extends WidgetType {
     // 插入/移动/删除行列等条目统一收在菜单里，由 runtime 维护，避免两处各写一份。
     const toolsLeft = document.createElement('div');
     toolsLeft.className = 'cm-table-tools';
+    const targetCols = () => {
+      const cols = selectedCols(this.lineNo);
+      return cols.length ? cols : [cursor.col];
+    };
     const alignLeft = iconBtn(
       alignIcon('left'),
-      '当前列左对齐',
-      () => act((rows) => setAlign(rows, cursor.col, 'left')),
+      '左对齐（支持多选列）',
+      () => act((rows) => setAlignCols(rows, targetCols(), 'left')),
       !alignNow,
     );
     const alignCenter = iconBtn(
       alignIcon('center'),
-      '当前列居中',
-      () => act((rows) => setAlign(rows, cursor.col, 'center')),
+      '居中对齐（支持多选列）',
+      () => act((rows) => setAlignCols(rows, targetCols(), 'center')),
       alignNow === 'center',
     );
     const alignRight = iconBtn(
       alignIcon('right'),
-      '当前列右对齐',
-      () => act((rows) => setAlign(rows, cursor.col, 'right')),
+      '右对齐（支持多选列）',
+      () => act((rows) => setAlignCols(rows, targetCols(), 'right')),
       alignNow === 'right',
     );
     toolsLeft.append(alignLeft, alignCenter, alignRight);
 
-    /** 点击不同列后，对齐按钮的高亮要跟着当前列走。 */
+    /** 点击不同列或拖选多列后，对齐按钮的高亮与提示跟着目标列同步。 */
     const refreshAlign = () => {
-      const now = this.aligns[cursor.col] || '';
-      alignLeft.classList.toggle('is-on', !now);
-      alignCenter.classList.toggle('is-on', now === 'center');
-      alignRight.classList.toggle('is-on', now === 'right');
+      const cols = targetCols();
+      const allLeft = cols.every((c) => !this.aligns[c] || this.aligns[c] === 'left');
+      const allCenter = cols.every((c) => this.aligns[c] === 'center');
+      const allRight = cols.every((c) => this.aligns[c] === 'right');
+      alignLeft.classList.toggle('is-on', allLeft);
+      alignCenter.classList.toggle('is-on', allCenter);
+      alignRight.classList.toggle('is-on', allRight);
+      const prefix = cols.length > 1 ? `选中的 ${cols.length} 列` : '当前列';
+      alignLeft.title = `${prefix}左对齐`;
+      alignCenter.title = `${prefix}居中`;
+      alignRight.title = `${prefix}右对齐`;
     };
+    refreshAlign();
     const moreBtn = iconBtn(
       svg('<circle cx="12" cy="5" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="12" cy="19" r="1.6"/>'),
       '更多表格操作',
@@ -811,6 +824,7 @@ export class TableWidget extends WidgetType {
         setTableSelection(lineNo, drag.start, pos);
       }
       paint();
+      refreshAlign();
     };
     const onUp = () => {
       stopDrag();
@@ -818,6 +832,7 @@ export class TableWidget extends WidgetType {
     };
 
     wrap.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
       if (e.target instanceof Element && e.target.closest('.cm-table-toolbar')) return;
       e.preventDefault();
       const hit = e.target instanceof Element ? e.target.closest('td, th') : null;
@@ -835,10 +850,12 @@ export class TableWidget extends WidgetType {
         const anchorRow = e.shiftKey && prev ? prev.anchor.row : hit._cell.row;
         setTableSelection(lineNo, { row: anchorRow, col: 0 }, { row: hit._cell.row, col: this.cols - 1 });
         paint();
+        refreshAlign();
         drag = { mode: 'row', anchorRow };
       } else if (e.shiftKey && prev) {
         setTableSelection(lineNo, prev.anchor, { row: hit._cell.row, col: hit._cell.col });
         paint();
+        refreshAlign();
         drag = null;
       } else {
         drag = {

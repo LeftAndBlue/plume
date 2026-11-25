@@ -151,18 +151,26 @@ import {
 } from "./widgets.js";
 import {
   buildTableMarkdown,
+  clearTableCells,
   deleteTableCol,
   deleteTableRow,
+  formatTableCells,
   insertTableCol,
   insertTableRow,
   moveTableCol,
+  moveTableColsBlock,
   moveTableRow,
+  moveTableRowsBlock,
+  pasteTableCells,
+  serializeTableSelection,
   setAlign,
+  setAlignCols,
   sortTableRows,
 } from "./table-model.js";
 import { openTablePicker } from "./table-picker.js";
 import {
   clearTableSelection,
+  getActiveTableSelection,
   paintTableSelection,
   selectedCols,
   selectedRows,
@@ -170,7 +178,7 @@ import {
   tableSelectionBounds,
 } from "./table-selection.js";
 import { cancelCellEditor, commitCellEditor, editTable, formatTable } from "./table-edit.js";
-import { normalizeMarkdownText, parseImageAttrs, splitTableRow } from "./rich-doc.js";
+import { normalizeMarkdownText, parseImageAttrs, scanTables, splitTableRow } from "./rich-doc.js";
 import { useShellStore } from "../stores/shell.js";
 import { docBaseUrl, isTauri, localFileUrl } from "../platform/studio.js";
 
@@ -1843,6 +1851,169 @@ function headingPosBySlug(slug) {
  * 末尾额外保留「编辑表格源码」和按列排序——Typora 没有，但这里一直是入口。
  * row 是视觉行号（0 = 表头），col 是列号。
  */
+/** 读取指定首行行号的表格源码二维数组（[header, delim, ...body]），供多选区复制/操作使用。 */
+function readTableGrid(lineNo) {
+  const table = scanTables(view.state.doc).find((tb) => tb.startLine === lineNo);
+  if (!table) return null;
+  const rows = [];
+  for (let n = table.startLine; n <= table.endLine; n++) {
+    rows.push(splitTableRow(view.state.doc.line(n).text).map((c) => c.raw));
+  }
+  return rows;
+}
+
+function clearAllTableSelections() {
+  clearTableSelection();
+  for (const el of document.querySelectorAll(".cm-table-wrap .is-selected")) {
+    el.classList.remove("is-selected");
+  }
+}
+
+async function copyTableSelectionArea(lineNo, bounds, { asMarkdown = false, cut = false } = {}) {
+  const grid = readTableGrid(lineNo);
+  if (!grid || !bounds) return false;
+  const { tsv, markdown, html } = serializeTableSelection(grid, bounds);
+  const plain = asMarkdown ? markdown : tsv;
+  try {
+    if (!asMarkdown && window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+    } else {
+      await navigator.clipboard.writeText(plain);
+    }
+  } catch {
+    try {
+      await navigator.clipboard.writeText(plain);
+    } catch {
+      flash("无法写入剪贴板");
+      return false;
+    }
+  }
+  const rCount = bounds.r2 - bounds.r1 + 1;
+  const cCount = bounds.c2 - bounds.c1 + 1;
+  if (cut) {
+    await editTable(view, lineNo, (rows) => clearTableCells(rows, bounds));
+    flash(`已剪切 ${rCount} 行 × ${cCount} 列`);
+  } else {
+    flash(asMarkdown ? `已复制 ${rCount} 行 × ${cCount} 列（Markdown）` : `已复制 ${rCount} 行 × ${cCount} 列`);
+  }
+  return true;
+}
+
+async function pasteIntoTableSelection(lineNo, bounds, textOverride = null) {
+  if (!bounds) return false;
+  let clip = textOverride;
+  if (clip == null) {
+    try {
+      clip = await navigator.clipboard.readText();
+    } catch {
+      flash("无法读取剪贴板");
+      return false;
+    }
+  }
+  if (!clip) return false;
+  const ok = await editTable(view, lineNo, (rows) => pasteTableCells(rows, bounds, clip));
+  if (ok) flash("已粘贴到选中单元格");
+  return ok;
+}
+
+/** 表格多选全局键盘操作：Delete/Backspace 清空、Ctrl+C/X/V 复剪粘、Ctrl+B/I/E/Shift+X 批量格式、Alt+方向键整块移动、Esc 取消选中。 */
+document.addEventListener("keydown", (e) => {
+  if (e.isComposing || e.keyCode === 229) return;
+  // 正在单元格浮层 textarea 或弹窗输入框里打字时不拦截
+  const activeTag = document.activeElement?.tagName;
+  if (activeTag === "TEXTAREA" || activeTag === "INPUT") return;
+  const activeSel = getActiveTableSelection();
+  if (!activeSel) return;
+  const { lineNo, bounds } = activeSel;
+  const mod = e.ctrlKey || e.metaKey;
+  const k = e.key.toLowerCase();
+
+  if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    clearAllTableSelections();
+    return;
+  }
+  if ((e.key === "Delete" || e.key === "Backspace") && !mod && !e.altKey) {
+    e.preventDefault();
+    e.stopPropagation();
+    const count = (bounds.r2 - bounds.r1 + 1) * (bounds.c2 - bounds.c1 + 1);
+    editTable(view, lineNo, (rows) => clearTableCells(rows, bounds)).then((ok) => {
+      if (ok) flash(`已清空 ${count} 个单元格`);
+    });
+    return;
+  }
+  if (mod && !e.altKey && !e.shiftKey && k === "c") {
+    e.preventDefault();
+    e.stopPropagation();
+    copyTableSelectionArea(lineNo, bounds, { cut: false });
+    return;
+  }
+  if (mod && !e.altKey && !e.shiftKey && k === "x") {
+    e.preventDefault();
+    e.stopPropagation();
+    copyTableSelectionArea(lineNo, bounds, { cut: true });
+    return;
+  }
+  if (mod && !e.altKey && !e.shiftKey && k === "v") {
+    e.preventDefault();
+    e.stopPropagation();
+    pasteIntoTableSelection(lineNo, bounds);
+    return;
+  }
+  if (mod && !e.altKey && !e.shiftKey && (k === "b" || k === "i" || k === "e")) {
+    e.preventDefault();
+    e.stopPropagation();
+    const marker = k === "b" ? "**" : k === "i" ? "*" : "`";
+    editTable(view, lineNo, (rows) => formatTableCells(rows, bounds, marker));
+    return;
+  }
+  if (mod && !e.altKey && e.shiftKey && k === "x") {
+    e.preventDefault();
+    e.stopPropagation();
+    editTable(view, lineNo, (rows) => formatTableCells(rows, bounds, "~~"));
+    return;
+  }
+  if (e.altKey && !mod && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+    const selR = selectedRows(lineNo).filter((r) => r >= 1);
+    if (!selR.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const delta = e.key === "ArrowUp" ? -1 : 1;
+    editTable(view, lineNo, (rows) => moveTableRowsBlock(rows, selR, delta)).then((ok) => {
+      if (ok) {
+        setTableSelection(
+          lineNo,
+          { row: bounds.r1 + delta, col: bounds.c1 },
+          { row: bounds.r2 + delta, col: bounds.c2 },
+        );
+      }
+    });
+    return;
+  }
+  if (e.altKey && !mod && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+    const selC = selectedCols(lineNo);
+    if (!selC.length) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const delta = e.key === "ArrowLeft" ? -1 : 1;
+    editTable(view, lineNo, (rows) => moveTableColsBlock(rows, selC, delta)).then((ok) => {
+      if (ok) {
+        setTableSelection(
+          lineNo,
+          { row: bounds.r1, col: bounds.c1 + delta },
+          { row: bounds.r2, col: bounds.c2 + delta },
+        );
+      }
+    });
+  }
+}, true);
+
 function tableContextItems(wrap, cell) {
   const info = cell?._cell;
   if (!info) return [];
@@ -1901,7 +2072,41 @@ function tableContextItems(wrap, cell) {
     ...(bounds
       ? [
           { label: `已选中 ${selRows.length} 行 × ${selCols.length} 列`, disabled: true },
-          { label: "取消选择", action: () => { clearTableSelection(lineNo); paintTableSelection(wrap, lineNo); } },
+          {
+            label: "清空选中单元格",
+            accel: "Delete",
+            action: () =>
+              editTable(view, lineNo, (rows) => clearTableCells(rows, bounds)).then((ok) => {
+                if (ok) flash(`已清空 ${selRows.length * selCols.length} 个单元格`);
+              }),
+          },
+          {
+            label: "复制选中区域",
+            accel: "Ctrl+C",
+            action: () => copyTableSelectionArea(lineNo, bounds, { cut: false }),
+          },
+          {
+            label: "剪切选中区域",
+            accel: "Ctrl+X",
+            action: () => copyTableSelectionArea(lineNo, bounds, { cut: true }),
+          },
+          {
+            label: "粘贴到选中区域",
+            accel: "Ctrl+V",
+            action: () => pasteIntoTableSelection(lineNo, bounds),
+          },
+          {
+            label: "批量格式",
+            children: [
+              { label: "加粗", accel: "Ctrl+B", action: () => editTable(view, lineNo, (rows) => formatTableCells(rows, bounds, "**")) },
+              { label: "斜体", accel: "Ctrl+I", action: () => editTable(view, lineNo, (rows) => formatTableCells(rows, bounds, "*")) },
+              { label: "行内代码", accel: "Ctrl+E", action: () => editTable(view, lineNo, (rows) => formatTableCells(rows, bounds, "`")) },
+              { label: "删除线", accel: "Ctrl+Shift+X", action: () => editTable(view, lineNo, (rows) => formatTableCells(rows, bounds, "~~")) },
+              { separator: true },
+              { label: "清除行内格式", action: () => editTable(view, lineNo, (rows) => formatTableCells(rows, bounds, null)) },
+            ],
+          },
+          { label: "取消选择", accel: "Esc", action: () => { clearTableSelection(lineNo); paintTableSelection(wrap, lineNo); } },
           { separator: true },
         ]
       : []),
@@ -1935,49 +2140,86 @@ function tableContextItems(wrap, cell) {
       ],
     },
     {
-      label: "移动该行",
+      label: manyRows ? `移动选中的 ${selRows.filter((r) => r >= 1).length} 行` : "移动该行",
       children: [
-        { label: "上移该行", accel: "Alt+↑", disabled: row <= 1, action: act((rows) => moveTableRow(rows, row, -1)) },
         {
-          label: "下移该行",
+          label: manyRows ? "整块上移" : "上移该行",
+          accel: "Alt+↑",
+          disabled: manyRows ? Math.min(...selRows.filter((r) => r >= 1), 0) <= 1 : row <= 1,
+          action: () => {
+            const targetRows = manyRows ? selRows.filter((r) => r >= 1) : [row];
+            return editTable(view, lineNo, (rows) => moveTableRowsBlock(rows, targetRows, -1)).then((ok) => {
+              if (ok && bounds) {
+                setTableSelection(lineNo, { row: bounds.r1 - 1, col: bounds.c1 }, { row: bounds.r2 - 1, col: bounds.c2 });
+              }
+            });
+          },
+        },
+        {
+          label: manyRows ? "整块下移" : "下移该行",
           accel: "Alt+↓",
-          disabled: row <= 0 || row >= lastRow,
-          action: act((rows) => moveTableRow(rows, row, 1)),
+          disabled: manyRows ? !selRows.some((r) => r >= 1) || Math.max(...selRows) >= lastRow : row <= 0 || row >= lastRow,
+          action: () => {
+            const targetRows = manyRows ? selRows.filter((r) => r >= 1) : [row];
+            return editTable(view, lineNo, (rows) => moveTableRowsBlock(rows, targetRows, 1)).then((ok) => {
+              if (ok && bounds) {
+                setTableSelection(lineNo, { row: bounds.r1 + 1, col: bounds.c1 }, { row: bounds.r2 + 1, col: bounds.c2 });
+              }
+            });
+          },
         },
       ],
     },
     {
-      label: "移动该列",
+      label: manyCols ? `移动选中的 ${selCols.length} 列` : "移动该列",
       children: [
-        { label: "左移该列", accel: "Alt+←", disabled: col <= 0, action: act((rows) => moveTableCol(rows, col, -1)) },
         {
-          label: "右移该列",
+          label: manyCols ? "整块左移" : "左移该列",
+          accel: "Alt+←",
+          disabled: manyCols ? bounds.c1 <= 0 : col <= 0,
+          action: () => {
+            const targetCols = manyCols ? selCols : [col];
+            return editTable(view, lineNo, (rows) => moveTableColsBlock(rows, targetCols, -1)).then((ok) => {
+              if (ok && bounds) {
+                setTableSelection(lineNo, { row: bounds.r1, col: bounds.c1 - 1 }, { row: bounds.r2, col: bounds.c2 - 1 });
+              }
+            });
+          },
+        },
+        {
+          label: manyCols ? "整块右移" : "右移该列",
           accel: "Alt+→",
-          disabled: col >= colCount - 1,
-          action: act((rows) => moveTableCol(rows, col, 1)),
+          disabled: manyCols ? bounds.c2 >= colCount - 1 : col >= colCount - 1,
+          action: () => {
+            const targetCols = manyCols ? selCols : [col];
+            return editTable(view, lineNo, (rows) => moveTableColsBlock(rows, targetCols, 1)).then((ok) => {
+              if (ok && bounds) {
+                setTableSelection(lineNo, { row: bounds.r1, col: bounds.c1 + 1 }, { row: bounds.r2, col: bounds.c2 + 1 });
+              }
+            });
+          },
         },
       ],
     },
     {
-      label: "对齐方式",
+      label: manyCols ? `对齐方式（${selCols.length} 列）` : "对齐方式",
       children: [
-        { label: "左对齐", action: act((rows) => setAlign(rows, col, "left")) },
-        { label: "居中", action: act((rows) => setAlign(rows, col, "center")) },
-        { label: "右对齐", action: act((rows) => setAlign(rows, col, "right")) },
+        { label: "左对齐", action: () => editTable(view, lineNo, (rows) => setAlignCols(rows, manyCols ? selCols : [col], "left")) },
+        { label: "居中", action: () => editTable(view, lineNo, (rows) => setAlignCols(rows, manyCols ? selCols : [col], "center")) },
+        { label: "右对齐", action: () => editTable(view, lineNo, (rows) => setAlignCols(rows, manyCols ? selCols : [col], "right")) },
       ],
     },
     { separator: true },
     {
-      label: "删除行",
+      label: manyRows ? `删除选中的 ${selRows.length} 行` : "删除行",
       disabled: lastRow <= 0,
       action: act((rows) => {
         if (!manyRows) return deleteTableRow(rows, row);
-        // 降序删，前面的行号才不会因为删除而错位
         for (const r of [...selRows].sort((a, b) => b - a)) deleteTableRow(rows, r);
       }),
     },
     {
-      label: "删除列",
+      label: manyCols ? `删除选中的 ${selCols.length} 列` : "删除列",
       disabled: colCount <= 1,
       action: act((rows) => {
         if (!manyCols) return deleteTableCol(rows, col);
@@ -1986,7 +2228,7 @@ function tableContextItems(wrap, cell) {
     },
     { label: "删除表格", danger: true, action: deleteTable },
     { separator: true },
-    { label: "复制表格", action: copyTable },
+    { label: bounds ? "复制选中区域（Markdown）" : "复制表格", action: copyTable },
     { label: "格式化表格源码", action: formatSource },
     { label: "编辑表格源码", action: editSource },
     {
