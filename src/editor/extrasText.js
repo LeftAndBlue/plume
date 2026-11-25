@@ -574,3 +574,55 @@ export function computeHeadingFoldLines(lines, lineIndex, maxLevel = 3) {
   if (endIndex <= lineIndex) return null;
   return { startLine: lineIndex + 1, endLine: endIndex + 1 };
 }
+
+/**
+ * 超大文档视口窗口块级渲染：计算当前可见视口上下各 margin 行（默认 200 行）的扫描区间。
+ */
+export function computeBlockWindow(docLines, visibleFromLine, visibleToLine, margin = 200) {
+  const total = Math.max(1, Number(docLines) || 1);
+  const from = Math.max(1, Math.min(total, Number(visibleFromLine) || 1));
+  const to = Math.max(from, Math.min(total, Number(visibleToLine) || from));
+  const pad = Math.max(0, Number(margin) || 0);
+  return {
+    startLine: Math.max(1, from - pad),
+    endLine: Math.min(total, to + pad),
+  };
+}
+
+/**
+ * 判断滚动后的可见视口是否接近当前块级渲染窗口边界，需要重新滑动窗口。
+ */
+export function shouldRefreshBlockWindow(win, visibleFromLine, visibleToLine, docLines, triggerMargin = 60) {
+  if (!win || !Number.isFinite(win.startLine) || !Number.isFinite(win.endLine)) return true;
+  const total = Math.max(1, Number(docLines) || 1);
+  if (visibleFromLine - triggerMargin < win.startLine && win.startLine > 1) return true;
+  if (visibleToLine + triggerMargin > win.endLine && win.endLine < total) return true;
+  return false;
+}
+
+/**
+ * 命令面板（Ctrl+Shift+P `>`）模糊过滤纯函数：支持多词空格分词、分类/关键词/命令 ID 匹配。
+ */
+export function filterPaletteCommands(commands, rawQuery) {
+  const list = Array.isArray(commands) ? commands : [];
+  const q = String(rawQuery || '').replace(/^\s*>\s*/, '').trim().toLowerCase();
+  if (!q) return list;
+  const terms = q.split(/\s+/).filter(Boolean);
+  const scored = [];
+  for (const item of list) {
+    const label = String(item.label || '').toLowerCase();
+    const category = String(item.category || '').toLowerCase();
+    const keywords = String(item.keywords || '').toLowerCase();
+    const cmd = String(item.cmd || '').toLowerCase();
+    const hay = `${label} ${category} ${keywords} ${cmd}`;
+    if (!terms.every((term) => hay.includes(term))) continue;
+    let score = 0;
+    if (label.startsWith(q)) score += 100;
+    else if (label.includes(q)) score += 60;
+    else if (cmd.includes(q)) score += 40;
+    else score += 20;
+    scored.push({ item, score });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.item);
+}

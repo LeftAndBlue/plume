@@ -209,6 +209,63 @@ export const editingImageField = StateField.define({
   },
 });
 
+
+/** 双击图片弹出灯箱大图预览（支持点击遮罩、按 Esc 关闭，以及点击切换原尺寸/适配）。 */
+let activeLightbox = null;
+export function openImageLightbox(src, caption = '') {
+  if (!src || typeof document === 'undefined') return;
+  if (activeLightbox) activeLightbox();
+  const overlay = document.createElement('div');
+  overlay.className = 'cm-image-lightbox';
+  overlay.setAttribute('role', 'dialog');
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', caption || '图片预览');
+
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'cm-image-lightbox-close';
+  closeBtn.setAttribute('aria-label', '关闭预览');
+  closeBtn.textContent = '×';
+
+  const bigImg = document.createElement('img');
+  bigImg.className = 'cm-image-lightbox-img';
+  bigImg.src = src;
+  bigImg.alt = caption || '';
+
+  const bar = document.createElement('div');
+  bar.className = 'cm-image-lightbox-caption';
+  bar.textContent = caption || src.split(/[\/]/).pop() || '';
+  bar.hidden = !bar.textContent;
+
+  const close = () => {
+    overlay.remove();
+    document.removeEventListener('keydown', onKey, true);
+    if (activeLightbox === close) activeLightbox = null;
+  };
+  const onKey = (ev) => {
+    if (ev.key === 'Escape') {
+      ev.preventDefault();
+      ev.stopPropagation();
+      close();
+    }
+  };
+
+  bigImg.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    overlay.classList.toggle('is-actual');
+  });
+  closeBtn.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    close();
+  });
+  overlay.addEventListener('click', close);
+  document.addEventListener('keydown', onKey, true);
+
+  overlay.append(closeBtn, bigImg, bar);
+  document.body.appendChild(overlay);
+  activeLightbox = close;
+}
+
 export class ImageWidget extends WidgetType {
   constructor(src, alt, title, from, to, inline, base, editing = false, width = '', align = '', attrs = '') {
     super();
@@ -315,6 +372,12 @@ export class ImageWidget extends WidgetType {
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
+    });
+
+    img.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openImageLightbox(url, this.alt || this.title || '');
     });
 
     wrap.appendChild(img);

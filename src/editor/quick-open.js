@@ -1,8 +1,12 @@
 /**
- * 快速打开（Ctrl+Shift+P）：在当前文档所在目录内按文件名 / 内容搜索并打开。
- * 从 runtime.js 抽离；依赖通过工厂注入。
+ * 快速打开与命令面板（Ctrl+Shift+P）：
+ * - 普通输入：在当前文档所在目录内按文件名 / 内容搜索并打开
+ * - 以 `>` 开头：切换为命令面板，直接搜索并执行编辑器命令（切主题、导出 PDF、公众号复制、中英文加空格、专注模式等）
  */
 import { t } from "../i18n.js";
+
+import { filterPaletteCommands } from "./extrasText.js";
+export { filterPaletteCommands };
 
 export function createQuickOpen({
   state,
@@ -12,39 +16,41 @@ export function createQuickOpen({
   settleCurrentDocument,
   openDiskDoc,
   samePath,
+  getCommands = () => [],
+  runCommand = () => {},
 }) {
-  return function quickOpen() {
-    if (!window.studio) {
-      openFile();
-      return;
-    }
+  return function quickOpen({ initialValue = "" } = {}) {
     const root = state.dir;
-    if (!root) {
-      flash("先打开一个文件，才能在其目录内快速打开");
-      openFile();
-      return;
-    }
+    const hasFileSearch = !!(window.studio && root);
+    const startValue = initialValue || (hasFileSearch ? "" : "> ");
+
     openSheet(t("quick.title"), (body, close) => {
       const wrap = document.createElement("div");
       wrap.className = "quick-open";
       const input = document.createElement("input");
       input.type = "text";
       input.className = "quick-open-input";
-      input.placeholder = t("quick.placeholder");
+      input.value = startValue;
+      input.placeholder = hasFileSearch
+        ? "输入文件名/正文搜索，或输入 > 搜索命令…"
+        : "输入 > 搜索命令（切主题、导出、排版、专注模式…）";
       input.setAttribute("aria-label", t("quick.aria"));
       const list = document.createElement("div");
       list.className = "quick-open-list";
       list.setAttribute("role", "listbox");
       const hint = document.createElement("div");
       hint.className = "quick-open-hint";
-      hint.textContent = t("quick.hint");
+      hint.textContent = "↑/↓ 选择 · Enter 执行 · 输入 > 切换命令面板 · Esc 关闭";
       wrap.append(input, list, hint);
       body.appendChild(wrap);
 
       let items = [];
+      let mode = "file"; // 'file' | 'command'
       let sel = 0;
       let seq = 0;
       let timer = 0;
+
+      const isCommandMode = () => input.value.trimStart().startsWith(">");
 
       const render = () => {
         list.replaceChildren();
@@ -56,30 +62,48 @@ export function createQuickOpen({
           row.setAttribute("aria-selected", i === sel ? "true" : "false");
           const name = document.createElement("span");
           name.className = "quick-open-name";
-          name.textContent = it.name;
           const sub = document.createElement("span");
           sub.className = "quick-open-sub";
-          sub.textContent = it.line ? t("quick.lineSub", { n: it.line, text: it.text }) : it.dir;
+          if (mode === "command") {
+            name.textContent = it.category ? `${it.category} · ${it.label}` : it.label;
+            sub.textContent = it.accel || it.cmd || "";
+          } else {
+            name.textContent = it.name;
+            sub.textContent = it.line ? t("quick.lineSub", { n: it.line, text: it.text }) : it.dir;
+          }
           row.append(name, sub);
           row.addEventListener("mousedown", (e) => e.preventDefault());
-          row.addEventListener("click", () => open(it.path));
+          row.addEventListener("click", () => activate(it));
           list.appendChild(row);
         });
         if (!items.length) {
           const empty = document.createElement("div");
           empty.className = "quick-open-empty";
-          empty.textContent = input.value.trim() ? t("quick.noMatch") : t("quick.empty");
+          if (mode === "command") {
+            empty.textContent = "没有匹配的命令";
+          } else if (!hasFileSearch) {
+            empty.textContent = "当前未打开磁盘目录；输入 > 可直接搜索并执行命令";
+          } else {
+            empty.textContent = input.value.trim() ? t("quick.noMatch") : t("quick.empty");
+          }
           list.appendChild(empty);
         }
         list.children[sel]?.scrollIntoView({ block: "nearest" });
       };
 
-      const open = async (p) => {
+      const activate = async (item) => {
+        if (!item) return;
+        if (mode === "command") {
+          close();
+          if (typeof item.action === "function") item.action();
+          else if (item.cmd) runCommand(item.cmd);
+          return;
+        }
         close();
-        if (samePath(p, state.path)) return;
+        if (samePath(item.path, state.path)) return;
         if (!(await settleCurrentDocument())) return;
         try {
-          const r = await window.studio.readFile(p);
+          const r = await window.studio.readFile(item.path);
           openDiskDoc(r);
         } catch (err) {
           flash("打开失败：" + (err && err.message ? err.message : err));
@@ -87,9 +111,18 @@ export function createQuickOpen({
       };
 
       const search = async () => {
+        if (isCommandMode()) {
+          mode = "command";
+          seq++;
+          items = filterPaletteCommands(getCommands(), input.value).slice(0, 60);
+          sel = 0;
+          render();
+          return;
+        }
+        mode = "file";
         const q = input.value.trim();
         const my = ++seq;
-        if (!q) {
+        if (!q || !hasFileSearch) {
           items = [];
           sel = 0;
           render();
@@ -97,9 +130,8 @@ export function createQuickOpen({
         }
         try {
           const outcome = await window.studio.searchFiles(root, q);
-          if (my !== seq) return; // 丢弃过期结果
+          if (my !== seq) return;
           const hits = outcome.hits || [];
-          // 每个文件只留一条：文件名命中优先于内容命中
           const byPath = new Map();
           for (const h of hits) {
             const prev = byPath.get(h.path);
@@ -118,7 +150,11 @@ export function createQuickOpen({
 
       input.addEventListener("input", () => {
         clearTimeout(timer);
-        timer = setTimeout(search, 160);
+        if (isCommandMode()) {
+          search();
+        } else {
+          timer = setTimeout(search, 160);
+        }
       });
       input.addEventListener("keydown", (e) => {
         if (e.key === "ArrowDown") {
@@ -131,14 +167,17 @@ export function createQuickOpen({
           render();
         } else if (e.key === "Enter") {
           e.preventDefault();
-          if (items[sel]) open(items[sel].path);
+          if (items[sel]) activate(items[sel]);
         } else if (e.key === "Escape") {
           e.preventDefault();
           close();
         }
       });
-      render();
-      requestAnimationFrame(() => input.focus());
+      search();
+      requestAnimationFrame(() => {
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+      });
     });
   };
 }

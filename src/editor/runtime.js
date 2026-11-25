@@ -61,6 +61,7 @@ import {
 
 import {
   blockDecorations,
+  blockViewportField,
   livePreview,
   refreshDecorations,
   setSourceMode,
@@ -97,7 +98,11 @@ import {
   softNewline,
 } from "./typing-ergonomics.js";
 import { detectCode, pasteAsCodeBlock } from "./paste-code.js";
-import { renderSelectionForClipboard } from "./clipboard.js";
+import { renderSelectionForClipboard, resolveImageForClipboard } from "./clipboard.js";
+import { renderWeChatHtml } from "./wechat-html.js";
+import { createJumpHistory, FONT_SIZE_DEFAULT, stepFontSize } from "./jump-history.js";
+import { createTabsManager } from "./tabs.js";
+import { createFileIO } from "./file-io.js";
 import { createMenubar } from "./menubar.js";
 import {
   ACCEL,
@@ -533,6 +538,7 @@ const view = new EditorView({
       zhPhrases,
       // 放在 blockDecorations 之前：后者初始化时要读它的值
       sourceModeField,
+      blockViewportField,
       editingImageField,
       fenceDeletionGuard,
       blockDecorations,
@@ -556,7 +562,21 @@ const view = new EditorView({
         { key: "Mod-4", run: () => (setHeading(4), true) },
         { key: "Mod-5", run: () => (setHeading(5), true) },
         { key: "Mod-6", run: () => (setHeading(6), true) },
-        { key: "Mod-0", run: () => (setHeading(0), true) },
+        {
+          key: "Mod-0",
+          run: () => {
+            const lineText = view.state.doc.lineAt(view.state.selection.main.head).text;
+            if (/^\s{0,3}#{1,6}\s+/.test(lineText)) setHeading(0);
+            else resetFontSize();
+            return true;
+          },
+        },
+        { key: "Mod-=", run: () => (adjustFontSize(1), true) },
+        { key: "Mod-Shift-=", run: () => (adjustFontSize(1), true) },
+        { key: "Mod--", run: () => (adjustFontSize(-1), true) },
+        { key: "Mod-Shift-0", run: () => (resetFontSize(), true) },
+        { key: "Alt-ArrowLeft", run: () => (jumpBack(), true) },
+        { key: "Alt-ArrowRight", run: () => (jumpForward(), true) },
         { key: "Mod-Shift-1", run: () => (showSide("outline"), true) },
         { key: "Mod-Shift-e", run: () => (showSide("files"), true) },
         { key: "Mod-Shift-f", run: () => (focusFileSearch(), true) },
@@ -587,6 +607,7 @@ const view = new EditorView({
         }
         if (u.docChanged || u.selectionSet) scheduleStatus();
         if (u.selectionSet) {
+          trackCursorJump(u);
           maybeTypewriter();
           // 光标一动，大纲里的「当前章节」也该跟着换
           requestAnimationFrame(() => syncOutlineCurrent());
@@ -657,17 +678,113 @@ view.dom.addEventListener(
   true,
 );
 
+/* ---------------- 字号实时缩放与光标跳转历史 ---------------- */
+
+function adjustFontSize(delta) {
+  const cur = getAppearance().fontSize;
+  const next = stepFontSize(cur, delta);
+  if (next === cur) {
+    flash(`正文字号已达边界：${next}px`);
+    return;
+  }
+  updateAppearance({ fontSize: next });
+  flash(`正文字号：${next}px`);
+}
+
+function resetFontSize() {
+  updateAppearance({ fontSize: FONT_SIZE_DEFAULT });
+  flash(`正文字号已重置：${FONT_SIZE_DEFAULT}px`);
+}
+
 let zoomTimer = null;
 window.addEventListener(
   "wheel",
   (e) => {
-    if (!e.ctrlKey) return;
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    adjustFontSize(e.deltaY < 0 ? 1 : -1);
     document.body.classList.add("on-zoom");
     clearTimeout(zoomTimer);
     zoomTimer = setTimeout(() => document.body.classList.remove("on-zoom"), 180);
   },
-  { passive: true },
+  { passive: false },
 );
+
+const jumpHistory = createJumpHistory({ maxEntries: 50, minLineDelta: 5 });
+let lastTrackedLoc = { path: null, pos: 0, line: 1 };
+
+function currentJumpLoc() {
+  const pos = view.state.selection.main.head;
+  return {
+    path: state.path,
+    pos,
+    line: view.state.doc.lineAt(Math.min(pos, view.state.doc.length)).number,
+  };
+}
+
+function recordJumpOrigin() {
+  jumpHistory.record(currentJumpLoc(), { force: true });
+}
+
+function trackCursorJump(u) {
+  const loc = currentJumpLoc();
+  if (!u.docChanged && !jumpHistory.isNavigating()) {
+    if (
+      lastTrackedLoc.path === loc.path &&
+      Math.abs(loc.line - lastTrackedLoc.line) >= 5
+    ) {
+      jumpHistory.record(lastTrackedLoc);
+    }
+  }
+  lastTrackedLoc = loc;
+}
+
+async function applyJumpTarget(target) {
+  if (!target) return false;
+  await jumpHistory.runNavigatingAsync(async () => {
+    if (target.path && !samePath(target.path, state.path)) {
+      if (window.studio?.readFile && (await settleCurrentDocument())) {
+        try {
+          const r = await window.studio.readFile(target.path);
+          openDiskDoc(r);
+        } catch {
+          return;
+        }
+      } else {
+        return;
+      }
+    }
+    const pos = Math.max(0, Math.min(target.pos, view.state.doc.length));
+    view.contentDOM.focus({ preventScroll: true });
+    view.dispatch({
+      selection: { anchor: pos },
+      effects: EditorView.scrollIntoView(pos, { y: "center", yMargin: 56 }),
+    });
+    blinkLine(view, pos);
+    lastTrackedLoc = currentJumpLoc();
+  });
+  return true;
+}
+
+function jumpBack() {
+  const target = jumpHistory.goBack(currentJumpLoc());
+  if (!target) {
+    flash("没有更早的光标位置");
+    return false;
+  }
+  applyJumpTarget(target);
+  return true;
+}
+
+function jumpForward() {
+  const target = jumpHistory.goForward(currentJumpLoc());
+  if (!target) {
+    flash("没有可前进的光标位置");
+    return false;
+  }
+  applyJumpTarget(target);
+  return true;
+}
 
 /* ---------------- 状态栏 ---------------- */
 
@@ -1255,6 +1372,7 @@ async function openTreePath(path) {
 }
 
 async function openSearchedFile(hit) {
+  recordJumpOrigin();
   if (!(await settleCurrentDocument())) return;
   try {
     const r = await window.studio.readFile(hit.path);
@@ -1406,6 +1524,7 @@ function renderOutline() {
 
 /** 大纲点击跳转（OutlinePanel 调用）：中间的标题放到正文区正中。 */
 function outlineJump(pos, index) {
+  recordJumpOrigin();
   const isFirstLine = index === 0 && view.state.doc.lineAt(pos).number === 1;
   // 先聚焦再改选区，确保 CM 同步写入 DOM Selection；否则后聚焦时浏览器会按旧选区把滚动条拉回去。
   view.contentDOM.focus({ preventScroll: true });
@@ -1416,6 +1535,7 @@ function outlineJump(pos, index) {
       yMargin: isFirstLine ? 80 : 56,
     }),
   });
+  unfoldCurrentHeading(view);
   if (isFirstLine) {
     view.scrollDOM.scrollTo({ top: 0 });
   }
@@ -2087,6 +2207,7 @@ function baseEditorContextItems() {
       label: "复制 / 粘贴为…",
       children: [
         { label: "复制为 Markdown", disabled: empty, action: () => run("copy-markdown") },
+        { label: "复制为公众号 / 富文本样式", action: () => run("copy-wechat") },
         { label: "粘贴为纯文本", action: () => run("paste-plain") },
         { label: "全选", accel: ACCEL["select-all"], action: () => run("select-all") },
       ],
@@ -2150,6 +2271,7 @@ function openLink(href) {
     }
     const pos = headingPosBySlug(slug);
     if (pos < 0) return false;
+    recordJumpOrigin();
     const isFirstLine = view.state.doc.lineAt(pos).number === 1;
     view.contentDOM.focus({ preventScroll: true });
     view.dispatch({
@@ -2503,320 +2625,70 @@ const {
   uploadImageFromMenu,
 } = imageOps;
 
-/* ---------------- 文件 ---------------- */
+/* ---------------- 多标签页与磁盘读写（已抽离至 tabs.js / file-io.js） ---------------- */
 
-function browserDownload(name, content, mime) {
-  const blob = new Blob([content], { type: mime });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  a.download = name;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-}
-
-async function openFile() {
-  if (window.studio) {
-    const r = await window.studio.openDialog();
-    if (!r || !(await settleCurrentDocument())) return;
-    openDiskDoc(r);
-  } else {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".md,.markdown,.txt";
-    input.onchange = async () => {
-      const f = input.files[0];
-      if (!f || !(await settleCurrentDocument())) return;
-      loadDoc(await f.text(), f.name);
-    };
-    input.click();
-  }
-}
-
-const documentTabs = [];
 const tabsEnabled = !new URLSearchParams(location.search).has("selftest");
+let fileIO = null;
+const tabs = createTabsManager({
+  state,
+  view,
+  shell,
+  samePath,
+  settleCurrentDocument,
+  openDiskDoc: (r) => fileIO.openDiskDoc(r),
+  loadDoc: (c, p, opts) => fileIO.loadDoc(c, p, opts),
+  flash: (msg) => flash(msg),
+  tabsEnabled,
+});
+fileIO = createFileIO({
+  state,
+  view,
+  shell,
+  historySlot,
+  tabs,
+  samePath,
+  setDirty,
+  writeDraft,
+  settleCurrentDocument,
+  setDocBase,
+  cancelCellEditor,
+  forgetMissingPastes,
+  settlePastedImages,
+  getWordGoal,
+  updateStatus,
+  renderOutline,
+  sidebarVisible,
+  sideView,
+  openSheet: (...args) => openSheet(...args),
+  flash: (msg) => flash(msg),
+  onDocLoaded: () => {
+    lastTrackedLoc = currentJumpLoc();
+  },
+});
 
-/* 会话持久化：只存路径等元数据（EditorState 不进存储），重启后恢复标签列表。 */
-
-function persistSession() {
-  if (!tabsEnabled || !window.studio) return;
-  try {
-    const tabs = documentTabs.map((t) => t.path).filter(Boolean);
-    if (!tabs.length && !state.path) {
-      localStorage.removeItem(SESSION_KEY);
-      return;
-    }
-    localStorage.setItem(
-      SESSION_KEY,
-      JSON.stringify({ tabs, active: state.path, updatedAt: Date.now() }),
-    );
-  } catch {
-    /* 存储不可用时退化为不恢复会话 */
-  }
-}
-
-async function restoreSession() {
-  let session = null;
-  try {
-    session = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
-  } catch {
-    return;
-  }
-  if (!session || !Array.isArray(session.tabs)) return;
-  const paths = session.tabs.filter((p) => typeof p === "string" && p);
-  const active = typeof session.active === "string" ? session.active : null;
-  // 非活动标签只登记元数据，点开时才读盘，避免启动时把所有文件都读一遍。
-  for (const p of paths) {
-    if (!documentTabs.some((t) => samePath(t.path, p))) {
-      documentTabs.push({ path: p, editorState: null });
-    }
-  }
-  if (active && paths.some((p) => samePath(p, active))) {
-    try {
-      const r = await window.studio.readFile(active);
-      openDiskDoc(r);
-      return;
-    } catch {
-      /* 活动文件已不存在：保留其余标签，正文留空 */
-    }
-  }
-  syncTabs();
-}
-
-function remapDocumentTabs(source, dest) {
-  for (const tab of documentTabs) {
-    const norm = (p) => String(p).toLowerCase();
-    if (samePath(tab.path, source)) tab.path = dest;
-    else if (norm(tab.path).startsWith(norm(source) + "\\") || norm(tab.path).startsWith(norm(source) + "/")) {
-      tab.path = dest + tab.path.slice(source.length);
-    }
-  }
-}
-
-function removeDocumentTabsUnder(source) {
-  const norm = (p) => String(p).toLowerCase();
-  for (let i = documentTabs.length - 1; i >= 0; i--) {
-    const p = norm(documentTabs[i].path);
-    if (samePath(documentTabs[i].path, source) || p.startsWith(norm(source) + "\\") || p.startsWith(norm(source) + "/")) {
-      documentTabs.splice(i, 1);
-    }
-  }
-}
-
-function syncTabs() {
-  // EditorState 留在运行时自己手里，Pinia 只放元数据（响应式系统不能包 CM 状态）。
-  shell.syncTabs(
-    documentTabs.map((tab) => ({ path: tab.path, active: samePath(tab.path, state.path) })),
-  );
-  persistSession();
-}
-
-async function openTab(path) {
-  if (samePath(path, state.path) || !(await settleCurrentDocument())) return;
-  try {
-    const r = await window.studio.readFile(path);
-    openDiskDoc(r);
-  } catch (err) {
-    flash("打开标签失败：" + (err?.message || err));
-  }
-}
-
-async function closeTab(path) {
-  const tab = documentTabs.find((item) => samePath(item.path, path));
-  if (!tab) return;
-  const active = samePath(tab.path, state.path);
-  if (active && !(await settleCurrentDocument())) return;
-  const index = documentTabs.indexOf(tab);
-  documentTabs.splice(index, 1);
-  if (active) {
-    const next = documentTabs[Math.max(0, index - 1)];
-    if (next) {
-      try {
-        const r = await window.studio.readFile(next.path);
-        openDiskDoc(r);
-        return;
-      } catch {
-        /* 文件已被外部删除时退回空白文档 */
-      }
-    }
-    loadDoc("", null);
-  } else syncTabs();
-}
-
-function snapshotDocumentTab(oldPath = state.path) {
-  if (!tabsEnabled || !oldPath) return;
-  let tab = documentTabs.find((item) => samePath(item.path, oldPath));
-  if (!tab) {
-    tab = { path: oldPath, editorState: null };
-    documentTabs.push(tab);
-  }
-  if (samePath(oldPath, state.path)) tab.editorState = view.state;
-}
-
-function loadDoc(content, pathOrName, { keepHistory = false } = {}) {
-  // UTF-8 BOM 是编码签名，不应参与 Markdown 解析；否则首个标题和 YAML 文首信息会失效。
-  Object.assign(state, detectDocFormat(content));
-  shell.setWordGoal(getWordGoal(typeof pathOrName === "string" ? pathOrName : null));
-  // 编码标记随载入重置；从磁盘打开时由 openDiskDoc 按读取结果回填。
-  state.encoding = "utf-8";
-  const text = withTrailingBlank(normalizeMarkdownText(content));
-  const oldPath = state.path;
-  if (!keepHistory) snapshotDocumentTab(oldPath);
-  const isFullPath = !!pathOrName && /[\\/]/.test(pathOrName);
-  const previousTab = !keepHistory && isFullPath
-    ? documentTabs.find((item) => samePath(item.path, pathOrName) && item.editorState?.doc.toString() === text)
-    : null;
-  // 换文档前先把表格浮层收掉，否则它挂着的源码区间会指到新文档上
-  cancelCellEditor();
-  state.path = isFullPath ? pathOrName : null;
-  state.dir = isFullPath ? pathOrName.replace(/[\\/][^\\/]*$/, "") : null;
-  window.studio?.watchDocument?.(state.path);
-  if (isFullPath) rememberRecent(pathOrName);
-  forgetMissingPastes(text);
-  // 基址必须赶在灌内容之前设好：dispatch 会同步构建第一屏的 widget。
-  // Tauri 下本地图片走 asset protocol（见 platform/studio.js 的 docBaseUrl）。
-  if (window.studio && isFullPath) {
-    setDocBase(docBaseUrl(state.dir));
-  } else {
-    setDocBase(null);
-  }
-  // 撤销栈挂在编辑器上。换文件若只做整篇替换，这一步会留在栈里，
-  // Ctrl+Z 会把上一份文件的正文撤进当前文件。
-  // 另存为是同一篇文稿，只换路径，栈要留着。
-  if (previousTab) {
-    view.setState(previousTab.editorState);
-  } else if (keepHistory) {
-    if (text !== view.state.doc.toString()) {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: text },
-      });
-    }
-    view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true });
-  } else {
-    // 先卸掉历史再换正文。addToHistory:false 会把旧记录映射过来，
-    // 必须等栈已经空了再换。
-    view.dispatch({ effects: historySlot.reconfigure([]) });
-    view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: text },
-      selection: { anchor: 0 },
-      scrollIntoView: true,
-      effects: historySlot.reconfigure(history()),
-      annotations: Transaction.addToHistory.of(false),
-    });
-  }
-  setDirty(false);
-  if (tabsEnabled && isFullPath) {
-    if (keepHistory && oldPath && !samePath(oldPath, pathOrName)) {
-      const oldIndex = documentTabs.findIndex((item) => samePath(item.path, oldPath));
-      if (oldIndex >= 0) documentTabs.splice(oldIndex, 1);
-    }
-    snapshotDocumentTab(pathOrName);
-  }
-  syncTabs();
-  updateStatus("");
-  renderOutline();
-  if (sidebarVisible() && sideView() === "files") shell.bumpFileTree();
-}
-
-/** 从磁盘打开的统一入口：载入正文并回填读取时判定的编码，保存时按原编码写回。 */
-function openDiskDoc(r) {
-  loadDoc(r.content, r.path);
-  state.encoding = String(r.encoding || "utf-8").toLowerCase();
-  if (state.encoding !== "utf-8") {
-    flash(`已按 ${state.encoding.toUpperCase()} 编码打开，保存时保持原编码`);
-  }
-}
-
-async function save() {
-  let content = view.state.doc.toString();
-  if (!window.studio) {
-    const name = state.path || "未命名.md";
-    browserDownload(name, serializeForDisk(content, state), "text/markdown");
-    setDirty(false);
-    return true;
-  }
-  if (state.path) {
-    const targetPath = state.path;
-    content = await settlePastedImages(content, targetPath);
-    if (content !== view.state.doc.toString()) {
-      view.dispatch({
-        changes: { from: 0, to: view.state.doc.length, insert: content },
-      });
-      forgetMissingPastes(content);
-    }
-    try {
-      await window.studio.saveFile(targetPath, serializeForDisk(content, state), state.encoding);
-    } catch (err) {
-      shell.setSaveError(String(err?.message || err));
-      throw err;
-    }
-    // 保存期间用户可能又输入了内容；旧快照落盘成功不能把新编辑标成干净。
-    if (state.path === targetPath && view.state.doc.toString() === content) {
-      setDirty(false);
-      flash("已保存 " + targetPath.split(/[\\/]/).pop());
-    } else {
-      setDirty(true);
-      scheduleAutosave();
-      flash("已保存旧快照，较新的修改仍待保存");
-    }
-    return true;
-  }
-  return saveAs();
-}
-
-async function saveAs() {
-  const content = view.state.doc.toString();
-  if (!window.studio) {
-    browserDownload("未命名.md", serializeForDisk(content, state), "text/markdown");
-    setDirty(false);
-    return true;
-  }
-  const p = await window.studio.saveAsDialog(serializeForDisk(content, state), state.path || undefined);
-  if (!p) return false;
-  const settled = await settlePastedImages(content, p);
-  if (settled !== content) await window.studio.saveFile(p, serializeForDisk(settled, state), "utf-8");
-  // 另存为是同一篇文稿：loadDoc 会按传入的 LF 正文重测格式，这里还原原有换行风格。
-  const { eol, bom } = state;
-  loadDoc(settled, p, { keepHistory: true });
-  state.eol = eol;
-  state.bom = bom;
-  flash("已另存为 " + p.split(/[\\/]/).pop());
-  return true;
-}
-
-async function newDoc() {
-  if (!(await settleCurrentDocument())) return;
-  loadDoc("", null);
-  state.path = null;
-  setDirty(false);
-  view.focus();
-}
-
-function scheduleAutosave() {
-  if (!state.autosave || !state.path || !window.studio) return;
-  clearTimeout(autosaveTimer);
-  autosaveTimer = setTimeout(async () => {
-    // 定时器可能在「打开文档 / 手动保存」之后才到点，那时候已经没什么可存的了。
-    // 不挡这一下，光是打开一篇文件就会把它重写一遍。
-    if (!state.dirty || !state.path) return;
-    const targetPath = state.path;
-    const content = view.state.doc.toString();
-    try {
-      await window.studio.saveFile(targetPath, serializeForDisk(content, state), state.encoding);
-      if (state.path === targetPath && view.state.doc.toString() === content) {
-        setDirty(false);
-        flash("已自动保存");
-      } else {
-        // 新输入已经在保存期间发生，保留脏标记和草稿，并安排下一轮自动保存。
-        setDirty(true);
-        scheduleAutosave();
-      }
-    } catch (e) {
-      writeDraft();
-      shell.setSaveError(String(e?.message || e));
-      flash("自动保存失败，草稿已保留");
-    }
-  }, 1200);
-}
+const {
+  restoreSession,
+  remapDocumentTabs,
+  removeDocumentTabsUnder,
+  syncTabs,
+  openTab,
+  closeTab,
+  closeOtherTabs,
+  closeTabsToRight,
+} = tabs;
+const {
+  browserDownload,
+  readRecent,
+  loadDoc,
+  openDiskDoc,
+  openFile,
+  openRecent,
+  save,
+  saveAs,
+  newDoc,
+  scheduleAutosave,
+  reloadModifiedFiles,
+} = fileIO;
 
 /* ---------------- 导出 / 快速打开 / 设置备份（抽离模块的实例化） ---------------- */
 
@@ -2853,6 +2725,41 @@ const {
   importSettings: () => importSettings(),
 });
 
+function buildPaletteCommands() {
+  const base = [
+    { category: "发布", label: "复制为公众号 / 富文本样式", cmd: "copy-wechat", keywords: "wechat 公众号 飞书 邮件 富文本 html" },
+    { category: "导出", label: "导出为 PDF", cmd: "export-pdf", accel: ACCEL["export-pdf"], keywords: "pdf print 导出" },
+    { category: "导出", label: "导出为 HTML（含样式）", cmd: "export-html", keywords: "html export" },
+    { category: "导出", label: "导出为 Word (.docx)", cmd: "export-docx", keywords: "word docx" },
+    { category: "导出", label: "导出为长图 PNG", cmd: "export-png", keywords: "png image 长图" },
+    { category: "排版", label: "中英文自动加空格", cmd: "format-spacing", keywords: "pangu spacing 空格 盘古" },
+    { category: "视图", label: "切换专注模式", cmd: "focus", accel: ACCEL.focus, keywords: "focus 专注" },
+    { category: "视图", label: "切换打字机模式", cmd: "typewriter", accel: ACCEL.typewriter, keywords: "typewriter 打字机" },
+    { category: "视图", label: "切换源代码模式", cmd: "source-mode", accel: ACCEL["source-mode"], keywords: "source 源码" },
+    { category: "视图", label: "放大正文字号", cmd: "zoom-in", accel: ACCEL["zoom-in"], keywords: "font zoom 放大 字号" },
+    { category: "视图", label: "缩小正文字号", cmd: "zoom-out", accel: ACCEL["zoom-out"], keywords: "font zoom 缩小 字号" },
+    { category: "视图", label: "重置正文字号", cmd: "zoom-reset", accel: ACCEL["zoom-reset"], keywords: "font zoom 重置 字号" },
+    { category: "导航", label: "返回上一处光标位置", cmd: "jump-back", accel: ACCEL["jump-back"], keywords: "back jump 后退 光标" },
+    { category: "导航", label: "前进到下一处光标位置", cmd: "jump-forward", accel: ACCEL["jump-forward"], keywords: "forward jump 前进 光标" },
+    { category: "大纲", label: "折叠当前章节（H1–H3）", cmd: "fold-heading", accel: ACCEL["fold-heading"], keywords: "fold 折叠 标题" },
+    { category: "大纲", label: "展开当前章节（H1–H3）", cmd: "unfold-heading", accel: ACCEL["unfold-heading"], keywords: "unfold 展开 标题" },
+    { category: "大纲", label: "折叠全部标题章节", cmd: "fold-all-headings", keywords: "fold all 全部折叠" },
+    { category: "大纲", label: "展开全部标题章节", cmd: "unfold-all-headings", keywords: "unfold all 全部展开" },
+    { category: "文件", label: "恢复未保存草稿", cmd: "draft-recovery", keywords: "draft recovery 草稿 恢复" },
+    { category: "文件", label: "跨文件搜索与替换", cmd: "search-files", accel: ACCEL["search-files"], keywords: "search replace 搜索" },
+    { category: "设置", label: "打开外观与编辑器设置", cmd: "settings", keywords: "settings preferences 设置" },
+    { category: "设置", label: "打开主题商店", cmd: "theme-store", keywords: "theme store 主题" },
+    { category: "帮助", label: "查看快捷键一览", cmd: "shortcuts", accel: ACCEL.shortcuts, keywords: "shortcuts keymap 快捷键" },
+  ];
+  const themeCmds = THEMES.map((th) => ({
+    category: "主题",
+    label: `切换主题：${th.label}`,
+    cmd: `theme:${th.id}`,
+    keywords: `theme 主题 ${th.id} ${th.label}`,
+  }));
+  return [...base, ...themeCmds];
+}
+
 const quickOpen = createQuickOpen({
   state,
   openSheet,
@@ -2861,6 +2768,8 @@ const quickOpen = createQuickOpen({
   settleCurrentDocument,
   openDiskDoc,
   samePath,
+  getCommands: buildPaletteCommands,
+  runCommand: (cmd) => run(cmd),
 });
 
 const { exportSettings, importSettings } = createSettingsBackup({
@@ -2878,7 +2787,7 @@ function flash(msg) {
 }
 
 document.addEventListener("plume-large-doc-fallback", () => {
-  flash("文档超过 12,000 行，已暂停块级预览以保持流畅");
+  flash("文档超过 12,000 行，已启用视口窗口块级预览（±200 行）以保持流畅");
 });
 
 /* ---------------- 打字机模式 ---------------- */
@@ -2931,41 +2840,7 @@ mainEl.addEventListener("drop", async (e) => {
   }
 });
 
-/* ---------------- 最近打开 / 设置 / 许可 ---------------- */
-
-function readRecent() {
-  try {
-    const list = JSON.parse(localStorage.getItem(RECENT_KEY) || "[]");
-    return Array.isArray(list) ? list.filter((p) => typeof p === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function rememberRecent(p) {
-  const list = [p, ...readRecent().filter((item) => !samePath(item, p))].slice(0, 8);
-  try {
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-  } catch {
-    /* 隐私模式写不进去就只在这一次会话里记住 */
-  }
-}
-
-async function openRecent(p) {
-  if (!p || !window.studio?.readFile || !(await settleCurrentDocument())) return;
-  try {
-    const r = await window.studio.readFile(p);
-    openDiskDoc(r);
-  } catch {
-    const list = readRecent().filter((item) => !samePath(item, p));
-    try {
-      localStorage.setItem(RECENT_KEY, JSON.stringify(list));
-    } catch {
-      /* 同上 */
-    }
-    flash("打不开这个文件，已从最近列表移除");
-  }
-}
+/* ---------------- 拼写检查与侧栏拖拽 ---------------- */
 
 function applySpellcheck() {
   const on = !!getAppearance().spellcheck;
@@ -3116,6 +2991,12 @@ const commands = {
   p: () => setHeading(0),
   copy: () => copySelection(false),
   "copy-markdown": () => copyMarkdownSelection(),
+  "copy-wechat": () => copyAsWeChatHtml(),
+  "zoom-in": () => adjustFontSize(1),
+  "zoom-out": () => adjustFontSize(-1),
+  "zoom-reset": () => resetFontSize(),
+  "jump-back": () => jumpBack(),
+  "jump-forward": () => jumpForward(),
   cut: () => copySelection(true),
   paste: async () => {
     try {
@@ -3223,6 +3104,48 @@ async function copyMarkdownSelection(v) {
   } catch {
     flash("无法写入剪贴板");
     return false;
+  }
+}
+
+/**
+ * 一键复制为公众号 / 飞书 / 邮件富文本 HTML（复用当前主题 CSS 变量生成全内联样式）。
+ */
+async function copyAsWeChatHtml() {
+  const s = view.state;
+  const sel = s.selection.main;
+  const md = sel.empty ? s.doc.toString() : s.sliceDoc(sel.from, sel.to);
+  if (!md.trim()) {
+    flash("当前内容为空");
+    return false;
+  }
+  const themeId = currentThemeId();
+  const themeMeta = THEMES.find((it) => it.id === themeId);
+  const { html, plain } = await renderWeChatHtml(md, {
+    themeId,
+    imageResolver: (srcUrl) => resolveImageForClipboard(srcUrl, state.dir),
+  });
+  try {
+    if (window.ClipboardItem) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+    } else {
+      await navigator.clipboard.writeText(html);
+    }
+    flash(`已复制为公众号 / 富文本样式（${themeMeta?.label || themeId}）`);
+    return true;
+  } catch {
+    try {
+      await navigator.clipboard.writeText(html);
+      flash(`已复制富文本 HTML（${themeMeta?.label || themeId}）`);
+      return true;
+    } catch {
+      flash("无法写入剪贴板");
+      return false;
+    }
   }
 }
 
@@ -3337,103 +3260,7 @@ document.querySelectorAll("[data-cmd]").forEach((el) => {
 });
 
 window.studio?.onCommand(run);
-let handlingExternalChange = false;
-
-/** 外部修改冲突的三态询问：保留我的编辑 / 载入磁盘版本 / 取消（继续编辑，稍后再说）。 */
-function askExternalConflict() {
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (v) => {
-      if (!settled) {
-        settled = true;
-        resolve(v);
-      }
-    };
-    openSheet(
-      "文件已在其他程序中修改",
-      (body, close) => {
-        const text = document.createElement("p");
-        text.className = "settings-note";
-        text.textContent = "磁盘上的内容与当前编辑不一致，如何处理？";
-        const hint = document.createElement("p");
-        hint.className = "settings-note";
-        hint.textContent =
-          "「保留我的编辑」继续当前内容，保存时会覆盖磁盘版本；" +
-          "「载入磁盘版本」放弃当前未保存的修改；「取消」暂不处理，继续编辑。";
-        const row = document.createElement("div");
-        row.className = "ask-actions";
-        const main = document.createElement("div");
-        main.className = "ask-group";
-        const side = document.createElement("div");
-        side.className = "ask-group";
-        for (const [label, value, kind, group] of [
-          ["保留我的编辑", "keep", "primary", main],
-          ["载入磁盘版本", "load", "danger", main],
-          ["取消", "cancel", "ghost", side],
-        ]) {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "btn-" + kind;
-          b.textContent = label;
-          b.addEventListener("click", () => {
-            done(value);
-            close();
-          });
-          group.appendChild(b);
-        }
-        row.append(main, side);
-        body.append(text, hint, row);
-      },
-      { onClose: () => done("cancel") },
-    );
-  });
-}
-
-/** 原地载入磁盘版本：保留光标位置（按偏移钳制），不清空撤销栈，可 Ctrl+Z 找回。 */
-function reloadFromDisk(content, encoding) {
-  Object.assign(state, detectDocFormat(content));
-  state.encoding = String(encoding || "utf-8").toLowerCase();
-  const text = withTrailingBlank(normalizeMarkdownText(content));
-  const sel = view.state.selection.main;
-  cancelCellEditor();
-  view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: text },
-    selection: {
-      anchor: Math.min(sel.anchor, text.length),
-      head: Math.min(sel.head, text.length),
-    },
-    scrollIntoView: true,
-  });
-  forgetMissingPastes(text);
-  setDirty(false);
-  snapshotDocumentTab(state.path);
-  updateStatus("");
-  renderOutline();
-}
-
-window.studio?.onExternalChange?.(async (file) => {
-  if (handlingExternalChange || !samePath(file, state.path)) return;
-  handlingExternalChange = true;
-  try {
-    const r = await window.studio.readFile(file);
-    if (withTrailingBlank(normalizeMarkdownText(r.content)) === view.state.doc.toString()) return;
-    if (state.dirty) {
-      const choice = await askExternalConflict();
-      if (choice === "keep") {
-        setDirty(true);
-        flash("已保留当前编辑，保存时将覆盖磁盘版本");
-        return;
-      }
-      if (choice !== "load") return; // 取消：不动当前内容，继续编辑
-    }
-    reloadFromDisk(r.content, r.encoding);
-    flash("已载入磁盘上的最新版本");
-  } catch (err) {
-    flash("无法读取外部修改：" + (err?.message || err));
-  } finally {
-    handlingExternalChange = false;
-  }
-});
+fileIO.bindExternalChange();
 
 /* ---------------- 菜单栏 ---------------- */
 
@@ -3542,6 +3369,8 @@ const MENUS = [
         {
           label: t("menu.export"),
           submenu: () => [
+            { label: "复制为公众号 / 富文本样式", cmd: "copy-wechat" },
+            { type: "sep" },
             { label: t("menu.exportHtml"), cmd: "export-html" },
             { label: t("menu.exportHtmlBare"), cmd: "export-html-bare" },
             { type: "sep" },
@@ -3986,23 +3815,6 @@ function focusFileSearch() {
       input.select();
     }
   });
-}
-
-async function reloadModifiedFiles(paths) {
-  if (!Array.isArray(paths) || !paths.length || !state.path || !window.studio?.readFile) return;
-  const curNorm = String(state.path).replace(/\\/g, "/").toLowerCase();
-  const hit = paths.some((p) => String(p).replace(/\\/g, "/").toLowerCase() === curNorm);
-  if (hit && !state.dirty) {
-    try {
-      const doc = await window.studio.readFile(state.path);
-      if (doc && typeof doc.content === "string") {
-        loadDoc(doc.content, state.path, { keepHistory: true });
-        setDirty(false);
-      }
-    } catch {
-      /* ignore */
-    }
-  }
 }
 
 return {

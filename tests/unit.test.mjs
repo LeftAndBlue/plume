@@ -25,8 +25,18 @@ import {
   sanitizeInlineStyle,
   scanDetailsBlocks,
   scanStyledInlineHtml,
+  computeBlockWindow,
+  filterPaletteCommands,
+  shouldRefreshBlockWindow,
   updateImageWidthAttr,
 } from '../src/editor/extrasText.js';
+import {
+  clampFontSize,
+  createJumpHistory,
+  stepFontSize,
+} from '../src/editor/jump-history.js';
+import { styleWeChatHtml } from '../src/editor/wechat-html.js';
+import { createTabsManager } from '../src/editor/tabs.js';
 import {
   clearAllDraftEntries,
   draftPreviewText,
@@ -35,6 +45,7 @@ import {
   upsertDraftEntry,
 } from '../src/editor/draft-recovery.js';
 import { DRAFT_KEY } from '../src/editor/storage-keys.js';
+import { declaredShortcuts, normAccel, shortcutGroups } from '../src/editor/shortcuts.js';
 import {
   codeBlockEnter,
   continueList,
@@ -556,4 +567,153 @@ test('任务列表快捷输入容错：- [] 后敲空格自动规范化为 - [ ]
   const v3 = makeMockView(code, pos);
   assert.equal(normalizeEmptyTaskListInput(v3, pos, pos, ' '), false);
   assert.equal(v3.text, code);
+});
+
+/* ---------------- 高频手感、发布效率与性能重构单元测试 ---------------- */
+
+test('字号实时缩放钳制在 12–28px 范围并支持逐级增减', () => {
+  assert.equal(clampFontSize(16), 16);
+  assert.equal(clampFontSize(8), 12);
+  assert.equal(clampFontSize(40), 28);
+  assert.equal(stepFontSize(16, 1), 17);
+  assert.equal(stepFontSize(16, -1), 15);
+  assert.equal(stepFontSize(12, -1), 12);
+  assert.equal(stepFontSize(28, 1), 28);
+});
+
+test('光标跳转历史支持后退/前进、邻近行去重与跨文件记录', () => {
+  const hist = createJumpHistory({ maxEntries: 10, minLineDelta: 5 });
+  assert.equal(hist.record({ path: '/a.md', pos: 10, line: 2 }), true);
+  // 同文件 5 行以内视为邻近编辑，不重复压栈
+  assert.equal(hist.record({ path: '/a.md', pos: 25, line: 4 }), false);
+  assert.equal(hist.sizes().back, 1);
+
+  // 大跨度跳转压栈
+  assert.equal(hist.record({ path: '/a.md', pos: 500, line: 40 }), true);
+  assert.equal(hist.sizes().back, 2);
+
+  // Alt+← 返回上一处
+  const b1 = hist.goBack({ path: '/b.md', pos: 0, line: 1 });
+  assert.deepEqual(b1, { path: '/a.md', pos: 500, line: 40 });
+  const b2 = hist.goBack(b1);
+  assert.deepEqual(b2, { path: '/a.md', pos: 25, line: 4 });
+  assert.equal(hist.goBack(b2), null);
+
+  // Alt+→ 前进
+  const f1 = hist.goForward(b2);
+  assert.deepEqual(f1, { path: '/a.md', pos: 500, line: 40 });
+  const f2 = hist.goForward(f1);
+  assert.deepEqual(f2, { path: '/b.md', pos: 0, line: 1 });
+});
+
+test('tabs.js 支持关闭其他、关闭右侧与路径重映射', async () => {
+  const synced = [];
+  const state = { path: '/docs/b.md' };
+  const store = createMockStorage();
+  const opened = [];
+  const mgr = createTabsManager({
+    state,
+    view: { state: { doc: { toString: () => '' } } },
+    shell: { syncTabs: (list) => synced.push(list) },
+    samePath: (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase(),
+    settleCurrentDocument: async () => true,
+    openDiskDoc: (r) => {
+      state.path = r.path;
+      opened.push(r.path);
+    },
+    loadDoc: () => {},
+    flash: () => {},
+    storage: store,
+    getStudio: () => ({
+      readFile: async (p) => ({ path: p, content: '# ' + p, encoding: 'utf-8' }),
+    }),
+  });
+  mgr.documentTabs.push(
+    { path: '/docs/a.md', editorState: null },
+    { path: '/docs/b.md', editorState: null },
+    { path: '/docs/c.md', editorState: null },
+    { path: '/docs/d.md', editorState: null },
+  );
+
+  // 关闭 b.md 右侧（应删掉 c.md 与 d.md）
+  await mgr.closeTabsToRight('/docs/b.md');
+  assert.deepEqual(mgr.documentTabs.map((t) => t.path), ['/docs/a.md', '/docs/b.md']);
+
+  // 关闭其他，只留 a.md（活动标签原本是 b.md，因此应自动打开 a.md）
+  await mgr.closeOtherTabs('/docs/a.md');
+  assert.deepEqual(mgr.documentTabs.map((t) => t.path), ['/docs/a.md']);
+  assert.deepEqual(opened, ['/docs/a.md']);
+});
+
+test('wechat-html.js 按 Orange Heart 与 Lapis 主题生成完整内联样式 HTML', () => {
+  const sampleHtml = [
+    '<h1>主标题</h1>',
+    '<h2>二级标题</h2>',
+    '<p>包含 <code>inline</code> 与 <strong>加粗</strong>。</p>',
+    '<blockquote><p>引用段落</p></blockquote>',
+    '<pre><code class="language-js">const x = 1;</code></pre>',
+  ].join('\n');
+
+  const orange = styleWeChatHtml(sampleHtml, { themeId: 'orangeheart' });
+  assert.ok(orange.html.includes('data-plume-theme="orangeheart"'));
+  assert.ok(orange.html.includes('#ef7060'), '应包含 Orange Heart 强调色 #ef7060');
+  assert.ok(orange.html.includes('border-left:4px solid #ef7060'), '引用块应带主题左边框');
+  assert.ok(orange.html.includes('background:#fff5f3'), '行内代码与代码块应带主题背景');
+
+  const lapis = styleWeChatHtml(sampleHtml, { themeId: 'lapis' });
+  assert.ok(lapis.html.includes('data-plume-theme="lapis"'));
+  assert.ok(lapis.html.includes('#4870ac'), '应包含 Lapis 强调色 #4870ac');
+  assert.ok(lapis.html.includes('#2c4c7e'), '应包含 Lapis 标题色 #2c4c7e');
+  assert.ok(lapis.plain.includes('主标题'));
+});
+
+test('quick-open 命令面板支持 > 前缀多词模糊过滤与排序', () => {
+  const cmds = [
+    { category: '主题', label: '切换主题：Orange Heart 橙心', cmd: 'theme:orangeheart', keywords: 'theme 橙心' },
+    { category: '导出', label: '导出为 PDF', cmd: 'export-pdf', keywords: 'pdf print' },
+    { category: '发布', label: '复制为公众号 / 富文本样式', cmd: 'copy-wechat', keywords: 'wechat 公众号' },
+    { category: '排版', label: '中英文自动加空格', cmd: 'format-spacing', keywords: 'pangu 空格' },
+  ];
+  assert.equal(filterPaletteCommands(cmds, '>').length, 4);
+  const res1 = filterPaletteCommands(cmds, '> 橙心');
+  assert.equal(res1.length, 1);
+  assert.equal(res1[0].cmd, 'theme:orangeheart');
+  const res2 = filterPaletteCommands(cmds, '> wechat 公众号');
+  assert.equal(res2.length, 1);
+  assert.equal(res2[0].cmd, 'copy-wechat');
+  const res3 = filterPaletteCommands(cmds, '> pdf');
+  assert.equal(res3[0].cmd, 'export-pdf');
+});
+
+test('超大文档视口窗口计算与滚动边界刷新触发正确', () => {
+  const w1 = computeBlockWindow(20000, 1, 50, 200);
+  assert.deepEqual(w1, { startLine: 1, endLine: 250 });
+
+  const w2 = computeBlockWindow(20000, 5000, 5060, 200);
+  assert.deepEqual(w2, { startLine: 4800, endLine: 5260 });
+
+  // 在窗口中部滚动不触发重算
+  assert.equal(shouldRefreshBlockWindow(w2, 4950, 5010, 20000, 60), false);
+  // 逼近下边界（5210 + 60 > 5260）触发滑动窗口
+  assert.equal(shouldRefreshBlockWindow(w2, 5150, 5210, 20000, 60), true);
+  // 贴近文档顶部且 startLine===1 不必重复触发
+  assert.equal(shouldRefreshBlockWindow(w1, 1, 40, 20000, 60), false);
+});
+
+test('shortcuts.js 正确归一化 Ctrl+- 与方向键并包含滚轮缩放参考', () => {
+  assert.equal(normAccel('Ctrl+-'), normAccel('Mod--'));
+  assert.equal(normAccel('Ctrl+-'), 'ctrl+-');
+  assert.equal(normAccel('Alt+←'), normAccel('Alt-ArrowLeft'));
+  assert.equal(normAccel('Alt+→'), normAccel('Alt-ArrowRight'));
+
+  const groups = shortcutGroups();
+  const allItems = groups.flatMap((g) => g.items);
+  assert.ok(allItems.some((i) => i.keys === 'Ctrl+滚轮'), '快捷键参考应包含 Ctrl+滚轮 缩放字体');
+  assert.ok(allItems.some((i) => i.cmd === 'zoom-in' && i.keys === 'Ctrl+='));
+  assert.ok(allItems.some((i) => i.cmd === 'zoom-out' && i.keys === 'Ctrl+-'));
+  assert.ok(allItems.some((i) => i.cmd === 'jump-back' && i.keys === 'Alt+←'));
+
+  const declared = declaredShortcuts();
+  const keys = declared.map((d) => normAccel(d.keys));
+  assert.equal(new Set(keys).size, keys.length, '声明的快捷键不应有重复键位');
 });

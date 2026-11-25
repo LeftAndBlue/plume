@@ -3,7 +3,7 @@ import { StateEffect, StateField } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { buildOutline } from './outline.js';
 import { getCodeFences, isFenceDraft } from './code-fences.js';
-import { scanDetailsBlocks, scanStyledInlineHtml } from './extrasText.js';
+import { computeBlockWindow, scanDetailsBlocks, scanStyledInlineHtml, shouldRefreshBlockWindow } from './extrasText.js';
 import {
   footnoteDef,
   imageBraceAfter,
@@ -47,7 +47,28 @@ export const sourceModeField = StateField.define({
   },
 });
 
-const inSourceMode = (state) => !!state.field(sourceModeField, false)
+const inSourceMode = (state) => !!state.field(sourceModeField, false);
+
+const LARGE_DOC_CHARS = 500000;
+const LARGE_DOC_LINES = 12000;
+const BLOCK_WINDOW_MARGIN = 200;
+
+export function isLargeDoc(doc) {
+  return !!doc && (doc.length > LARGE_DOC_CHARS || doc.lines > LARGE_DOC_LINES);
+}
+
+/** 超大文档视口窗口更新事件与状态字段（只对可见视口上下各 200 行做块级扫描）。 */
+export const setBlockViewport = StateEffect.define();
+
+export const blockViewportField = StateField.define({
+  create: () => ({ startLine: 1, endLine: 1 + BLOCK_WINDOW_MARGIN * 2 }),
+  update(value, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setBlockViewport) && e.value) return e.value;
+    }
+    return value;
+  },
+});
 
 const CODE_NODES = new Set(['InlineCode', 'FencedCode', 'CodeText', 'CodeBlock', 'CodeInfo']);
 
@@ -212,20 +233,35 @@ function computeBlockDecos(state) {
   blockActivityCache.set(doc, sensitive);
   // 源代码模式：不渲染任何块，原文就是所见
   if (inSourceMode(state)) return Decoration.none;
-  // 块级扫描是全文级的：超大文档直接放弃块渲染，保证输入延迟并提示用户
-  if (doc.length > 500000 || doc.lines > 12000) {
+  // 超大文档改为视口窗口渲染（可见视口上下各 200 行），兼顾流畅度与表格/公式/图片渲染
+  const large = isLargeDoc(doc);
+  let scanStart = 1;
+  let scanEnd = doc.lines;
+  if (large) {
     if (!largeDocNotified.has(doc) && typeof document !== 'undefined') {
       largeDocNotified.add(doc);
       queueMicrotask(() => document.dispatchEvent(new CustomEvent('plume-large-doc-fallback')));
     }
-    return Decoration.none;
+    const win = state.field(blockViewportField, false);
+    if (win) {
+      scanStart = Math.max(1, Math.min(doc.lines, win.startLine));
+      scanEnd = Math.max(scanStart, Math.min(doc.lines, win.endLine));
+    } else {
+      scanEnd = Math.min(doc.lines, 1 + BLOCK_WINDOW_MARGIN * 2);
+    }
   }
   const active = activeLineSet(state);
   const out = [];
   const codeByLine = new Map();
-  for (const block of getCodeFences(state)) codeByLine.set(block.open.line.number, block);
+  for (const block of getCodeFences(state)) {
+    if (large && (block.endLineNo < scanStart || block.open.line.number > scanEnd)) continue;
+    codeByLine.set(block.open.line.number, block);
+  }
   const tableByLine = new Map();
-  for (const table of scanTables(doc)) tableByLine.set(table.startLine, table);
+  for (const table of scanTables(doc)) {
+    if (large && (table.endLine < scanStart || table.startLine > scanEnd)) continue;
+    tableByLine.set(table.startLine, table);
+  }
 
   const tocRe = /^\s{0,3}\[toc\]\s*$/i;
   // 目录条目和侧栏大纲共用一套标题解析，两处显示的层级/顺序才不会打架。
@@ -233,9 +269,9 @@ function computeBlockDecos(state) {
   let headingsCache = null;
   const headingList = () => (headingsCache || (headingsCache = buildOutline(state)));
 
-  let i = 1;
-  const frontMatter = scanFrontMatter(doc);
-  while (i <= doc.lines) {
+  let i = scanStart;
+  const frontMatter = scanStart === 1 ? scanFrontMatter(doc) : null;
+  while (i <= scanEnd) {
     const line = doc.line(i);
     const text = line.text;
 
@@ -434,13 +470,17 @@ function computeBlockDecos(state) {
     }
     i++;
   }
-  // <details><summary> 折叠块实时预览（块级替换必须落在 StateField blockDecorations 中）
-  const docStr = doc.toString();
+  // <details><summary> 折叠块实时预览（超大文档只切视口窗口切片，不整篇 toString）
+  const sliceBase = large ? doc.line(scanStart).from : 0;
+  const sliceEnd = large ? doc.line(scanEnd).to : doc.length;
+  const docStr = large ? doc.sliceString(sliceBase, sliceEnd) : doc.toString();
   if (docStr.includes('<details')) {
     for (const blk of scanDetailsBlocks(docStr)) {
-      if (blk.to <= blk.from || blk.to > doc.length) continue;
-      const startNo = doc.lineAt(blk.from).number;
-      const endNo = doc.lineAt(blk.to).number;
+      const absFrom = sliceBase + blk.from;
+      const absTo = sliceBase + blk.to;
+      if (absTo <= absFrom || absTo > doc.length) continue;
+      const startNo = doc.lineAt(absFrom).number;
+      const endNo = doc.lineAt(absTo).number;
       let touched = false;
       for (let ln = startNo; ln <= endNo; ln++) {
         sensitive.add(ln);
@@ -450,8 +490,8 @@ function computeBlockDecos(state) {
         out.push(
           Decoration.replace({
             block: true,
-            widget: new DetailsWidget(blk.summary, blk.body, blk.open, blk.from, blk.to),
-          }).range(blk.from, blk.to)
+            widget: new DetailsWidget(blk.summary, blk.body, blk.open, absFrom, absTo),
+          }).range(absFrom, absTo)
         );
       }
     }
@@ -470,7 +510,7 @@ export const blockDecorations = StateField.define({
   },
   update(value, tr) {
     // 切源代码模式、切专注模式都要重算：它们不改文档也不动选区
-    const forced = tr.effects.some((e) => e.is(setSourceMode) || e.is(setEditingImage) || e.is(refreshDecorations));
+    const forced = tr.effects.some((e) => e.is(setSourceMode) || e.is(setEditingImage) || e.is(refreshDecorations) || e.is(setBlockViewport));
     if (!forced && !tr.docChanged && !tr.selection) return value.map(tr.changes);
     if (!forced && !tr.docChanged && tr.selection) {
       // 普通正文之间移动光标不会改变任何块级 widget。只有进入/离开表格、
@@ -1178,9 +1218,27 @@ function buildInline(view) {
 export const livePreview = ViewPlugin.fromClass(
   class {
     constructor(view) {
+      this._vpScheduled = false;
       const r = buildInline(view);
       this.decorations = r.deco;
       this.atomics = r.atomic;
+      this._syncLargeDocViewport(view);
+    }
+    _syncLargeDocViewport(view) {
+      const doc = view.state.doc;
+      if (!isLargeDoc(doc) || this._vpScheduled) return;
+      const vp = view.viewport;
+      const visFrom = doc.lineAt(Math.max(0, Math.min(doc.length, vp.from))).number;
+      const visTo = doc.lineAt(Math.max(0, Math.min(doc.length, vp.to))).number;
+      const curWin = view.state.field(blockViewportField, false);
+      if (!shouldRefreshBlockWindow(curWin, visFrom, visTo, doc.lines, 60)) return;
+      const nextWin = computeBlockWindow(doc.lines, visFrom, visTo, BLOCK_WINDOW_MARGIN);
+      this._vpScheduled = true;
+      requestAnimationFrame(() => {
+        this._vpScheduled = false;
+        if (!view.dom.isConnected) return;
+        view.dispatch({ effects: setBlockViewport.of(nextWin) });
+      });
     }
     update(u) {
       const forced = u.transactions.some((tr) =>
@@ -1190,6 +1248,9 @@ export const livePreview = ViewPlugin.fromClass(
         const r = buildInline(u.view);
         this.decorations = r.deco;
         this.atomics = r.atomic;
+      }
+      if (u.viewportChanged || u.docChanged) {
+        this._syncLargeDocViewport(u.view);
       }
     }
   },

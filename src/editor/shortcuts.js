@@ -38,6 +38,9 @@ const SHORTCUTS = [
       { label: '查找', cmd: 'find', keys: 'Ctrl+F' },
       { label: '跨文件搜索与替换', cmd: 'search-files', keys: 'Ctrl+Shift+F' },
       { label: '全选', cmd: 'select-all', keys: 'Ctrl+A' },
+      { label: '软换行', keys: 'Shift+Enter' },
+      { label: '列表 / 代码缩进', keys: 'Tab' },
+      { label: '减少缩进', keys: 'Shift+Tab' },
     ],
   },
   {
@@ -75,7 +78,23 @@ const SHORTCUTS = [
       { label: '大纲', cmd: 'view-outline', keys: 'Ctrl+Shift+1' },
       { label: '折叠当前章节', cmd: 'fold-heading', keys: 'Ctrl+Alt+[' },
       { label: '展开当前章节', cmd: 'unfold-heading', keys: 'Ctrl+Alt+]' },
+      { label: '放大正文字号', cmd: 'zoom-in', keys: 'Ctrl+=' },
+      { label: '缩小正文字号', cmd: 'zoom-out', keys: 'Ctrl+-' },
+      { label: '重置正文字号', cmd: 'zoom-reset', keys: 'Ctrl+Shift+0' },
+      { label: '光标后退', cmd: 'jump-back', keys: 'Alt+←' },
+      { label: '光标前进', cmd: 'jump-forward', keys: 'Alt+→' },
       { label: '快捷键一览', cmd: 'shortcuts', keys: 'F1' },
+    ],
+  },
+  {
+    group: '鼠标与快捷输入',
+    items: [
+      { label: '实时缩放正文字号（12–28px）', keys: 'Ctrl+滚轮', keymap: false },
+      { label: '直接打开链接或跳转标题', keys: 'Ctrl+点击链接', keymap: false },
+      { label: '大图灯箱预览图片', keys: '双击图片', keymap: false },
+      { label: '呼出快捷插入菜单', keys: '行首 /', keymap: false },
+      { label: 'Emoji 补全与自动替换', keys: ':关键词', keymap: false },
+      { label: '搜索并执行全部命令', keys: 'Ctrl+Shift+P >', keymap: false },
     ],
   },
 ];
@@ -84,13 +103,14 @@ const SHORTCUTS = [
 const KEY_NOTES = [
   'Alt 或 F10 聚焦菜单栏；Alt+F/E/P/O/V/T/H 直接展开对应菜单',
   'Ctrl+Shift+E / Ctrl+Shift+1 再按一次即收起侧栏；Windows 下重做也可用 Ctrl+Y',
-  'Ctrl+点击正文里的链接直接打开（普通点击只是把光标放进去改）；选中文字后粘贴链接会变成 [文字](链接)',
+  '非标题行上按 Ctrl+0 也可重置正文字号；选中文字后粘贴链接会自动变成 [文字](链接)',
+  '在行内配对符号（**、`、$、()、[]）内按 Tab 可跳出闭合符；代码块内 Ctrl+A 先选当前块，再按全选整篇',
 ];
 
 /** cmd → 加速键字符串，供菜单使用 */
 export const ACCEL = Object.fromEntries(
   SHORTCUTS.flatMap((g) => g.items)
-    .filter((i) => i.keys)
+    .filter((i) => i.cmd && i.keys)
     .map((i) => [i.cmd, i.keys])
 );
 
@@ -100,18 +120,30 @@ export const ACCEL = Object.fromEntries(
  */
 export function normAccel(text) {
   const MODS = ['ctrl', 'alt', 'shift', 'meta'];
-  const parts = String(text)
-    .split(/[+\-]/)
-    .map((p) => p.trim().toLowerCase())
-    .filter(Boolean);
+  const KEY_ALIAS = { '←': 'arrowleft', '→': 'arrowright', '↑': 'arrowup', '↓': 'arrowdown' };
+  const raw = String(text || '').trim();
+  const parts = [];
+  let token = '';
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if ((ch === '+' || ch === '-') && i < raw.length - 1) {
+      if (token) parts.push(token);
+      token = '';
+    } else {
+      token += ch;
+    }
+  }
+  if (token) parts.push(token);
   const mods = new Set();
   let key = '';
-  for (const p of parts) {
+  for (const rawPart of parts) {
+    const p = rawPart.trim().toLowerCase();
+    if (!p) continue;
     if (p === 'mod' || p === 'ctrl' || p === 'cmdorctrl' || p === 'control') mods.add('ctrl');
     else if (p === 'alt' || p === 'option') mods.add('alt');
     else if (p === 'shift') mods.add('shift');
     else if (p === 'meta' || p === 'cmd' || p === 'win' || p === 'super') mods.add('meta');
-    else key = p;
+    else key = KEY_ALIAS[p] || p;
   }
   return [...MODS.filter((m) => mods.has(m)), key].join('+');
 }
@@ -142,7 +174,7 @@ export function shortcutText() {
   return [...lines, '', ...KEY_NOTES].join('\n');
 }
 
-/** 全部声明项（自检用） */
+/** 全部声明项（自检用：仅校验绑定在 keymap 中的快捷键） */
 export function declaredShortcuts() {
-  return SHORTCUTS.flatMap((g) => g.items.map((i) => ({ ...i, group: g.group })));
+  return SHORTCUTS.flatMap((g) => g.items.filter((i) => i.keymap !== false).map((i) => ({ ...i, group: g.group })));
 }
