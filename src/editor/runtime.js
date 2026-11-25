@@ -1231,19 +1231,18 @@ function renderOutline() {
 /** 大纲点击跳转（OutlinePanel 调用）：中间的标题放到正文区正中。 */
 function outlineJump(pos, index) {
   const isFirstLine = index === 0 && view.state.doc.lineAt(pos).number === 1;
+  // 先聚焦再改选区，确保 CM 同步写入 DOM Selection；否则后聚焦时浏览器会按旧选区把滚动条拉回去。
+  view.contentDOM.focus({ preventScroll: true });
   view.dispatch({
     selection: { anchor: pos },
-    effects: isFirstLine
-      ? undefined
-      : EditorView.scrollIntoView(pos, {
-          y: index === 0 ? "start" : "center",
-          yMargin: 56,
-        }),
+    effects: EditorView.scrollIntoView(pos, {
+      y: index === 0 ? "start" : "center",
+      yMargin: isFirstLine ? 80 : 56,
+    }),
   });
   if (isFirstLine) {
     view.scrollDOM.scrollTo({ top: 0 });
   }
-  view.contentDOM.focus({ preventScroll: true });
   blinkLine(view, pos);
 }
 
@@ -1976,16 +1975,17 @@ function openLink(href) {
     const pos = headingPosBySlug(slug);
     if (pos < 0) return false;
     const isFirstLine = view.state.doc.lineAt(pos).number === 1;
+    view.contentDOM.focus({ preventScroll: true });
     view.dispatch({
       selection: { anchor: pos },
-      effects: isFirstLine
-        ? undefined
-        : EditorView.scrollIntoView(pos, { y: "start", yMargin: 56 }),
+      effects: EditorView.scrollIntoView(pos, {
+        y: "start",
+        yMargin: isFirstLine ? 80 : 56,
+      }),
     });
     if (isFirstLine) {
       view.scrollDOM.scrollTo({ top: 0 });
     }
-    view.contentDOM.focus({ preventScroll: true });
     return true;
   }
   if (/^(https?:|mailto:)/i.test(url)) {

@@ -41,6 +41,7 @@ watch(
       :class="{ 'is-current': shell.outlineCurrent === index, 'is-open': item.hasChild && !shell.outlineCollapsed[item.key] }"
       :data-level="item.level"
       :title="item.text"
+      @mousedown.prevent
       @click="jump(item, index)"
     >
       <span
