@@ -1,35 +1,50 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
-  <!-- Plume 应用图标 · 净纸版：浅底 + 品牌色字母 P，内孔仍是实时预览窗 -->
+  <!-- Plume 青金折羽：瓷白圆角底 × 青金石立体折纸羽毛 -->
   <defs>
-    <linearGradient id="tile" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#FFFFFF"/>
-      <stop offset="1" stop-color="#EDF3F7"/>
+    <linearGradient id="porcelain" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FCFBF8"/>
+      <stop offset="0.6" stop-color="#F8F7F2"/>
+      <stop offset="1" stop-color="#F0EFE9"/>
     </linearGradient>
-    <linearGradient id="mark" x1="0" y1="1" x2="1" y2="0">
-      <stop offset="0" stop-color="#1B3FA0"/>
-      <stop offset="0.55" stop-color="#1C7FCB"/>
-      <stop offset="1" stop-color="#12BFAE"/>
+    <linearGradient id="lapis-main" x1="0.18" y1="0.88" x2="0.84" y2="0.14">
+      <stop offset="0" stop-color="#0E2366"/>
+      <stop offset="0.48" stop-color="#1E46B8"/>
+      <stop offset="1" stop-color="#3B82F6"/>
+    </linearGradient>
+    <linearGradient id="lapis-upper" x1="0.15" y1="0.85" x2="0.85" y2="0.12">
+      <stop offset="0" stop-color="#14328A"/>
+      <stop offset="0.55" stop-color="#2255D1"/>
+      <stop offset="1" stop-color="#4A90FF"/>
+    </linearGradient>
+    <linearGradient id="lapis-fold" x1="0.2" y1="0.9" x2="0.85" y2="0.25">
+      <stop offset="0" stop-color="#0B1C54"/>
+      <stop offset="0.6" stop-color="#15358F"/>
+      <stop offset="1" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="spine-glow" x1="0.2" y1="0.85" x2="0.82" y2="0.16">
+      <stop offset="0" stop-color="#1A3B99"/>
+      <stop offset="0.45" stop-color="#60A5FA"/>
+      <stop offset="1" stop-color="#93C5FD"/>
     </linearGradient>
   </defs>
-  <rect x="40" y="40" width="944" height="944" rx="212" fill="url(#tile)"/>
-  <rect x="41" y="41" width="942" height="942" rx="211" fill="none" stroke="#0B2B4A" stroke-opacity="0.07" stroke-width="2"/>
-
-  <path d="M 307 812 V 272 H 517 A 200 200 0 0 1 517 672 H 307"
-        fill="none" stroke="url(#mark)" stroke-width="120"
-        stroke-linejoin="round" stroke-linecap="butt"/>
-
-  <!-- 源码 # -->
-  <g stroke="#12BFAE" stroke-width="13" stroke-linecap="round">
-    <path d="M 416 408 L 404 492"/>
-    <path d="M 468 408 L 456 492"/>
-    <path d="M 396 434 L 480 434"/>
-    <path d="M 392 468 L 476 468"/>
+  <rect x="40" y="40" width="944" height="944" rx="212" fill="url(#porcelain)"/>
+  <rect x="41.5" y="41.5" width="941" height="941" rx="210.5" fill="none" stroke="#DFDDD4" stroke-width="3"/>
+  <!-- 青金折羽：两层几何折纸曲面与羽干高光 -->
+  <g>
+    <!-- 左侧外翼片 -->
+    <path d="M 332 708 C 318 610, 344 470, 444 366 C 436 446, 444 508, 412 588 C 386 644, 356 680, 332 708 Z"
+          fill="url(#lapis-fold)"/>
+    <!-- 下侧折翼片 -->
+    <path d="M 342 698 C 432 690, 560 652, 650 546 C 584 556, 514 552, 442 586 C 394 612, 362 652, 342 698 Z"
+          fill="url(#lapis-fold)"/>
+    <!-- 主羽翼（左半） -->
+    <path d="M 436 534 C 446 356, 548 250, 756 226 C 656 326, 558 430, 436 534 Z"
+          fill="url(#lapis-upper)"/>
+    <!-- 主羽翼（右半高光曲面） -->
+    <path d="M 436 534 C 558 430, 656 326, 756 226 C 768 386, 706 492, 578 532 C 520 550, 472 548, 436 534 Z"
+          fill="url(#lapis-main)"/>
+    <!-- 中央折痕羽干 -->
+    <path d="M 272 790 C 318 712, 414 584, 524 468 C 608 380, 692 296, 756 226 C 686 286, 594 370, 502 462 C 392 574, 314 684, 246 786 C 254 794, 264 794, 272 790 Z"
+          fill="url(#spine-glow)"/>
   </g>
-  <!-- 光标 -->
-  <rect x="505" y="372" width="9" height="204" rx="4.5" fill="#1B3FA0" fill-opacity="0.28"/>
-  <rect x="499" y="362" width="21" height="11" rx="3" fill="#12BFAE"/>
-  <!-- 渲染结果 -->
-  <rect x="540" y="426" width="96" height="23" rx="7" fill="#1B3FA0"/>
-  <rect x="540" y="470" width="74" height="10" rx="5" fill="#1C7FCB" fill-opacity="0.62"/>
-  <rect x="540" y="492" width="52" height="10" rx="5" fill="#1C7FCB" fill-opacity="0.38"/>
 </svg>
