@@ -207,7 +207,11 @@ pub fn adopt_image(
         .ok_or("未保存的文档不能收纳绝对路径图片")?;
     let dir = doc_dir.join(safe_image_folder(folder));
     fs::create_dir_all(&dir)?;
-    let dest = unique_dest(&dir, src.file_stem().unwrap().to_string_lossy().as_ref(), &ext);
+    let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_else(|| "image".into());
+    let dest = unique_dest(&dir, stem.as_ref(), &ext);
     fs::copy(&src, &dest)?;
     Ok(finalize_image(&dest, &doc_dir))
 }
@@ -241,7 +245,11 @@ pub fn collect_images(
         }
         fs::create_dir_all(&dir)?;
         let ext = src.extension().unwrap_or_default().to_string_lossy();
-        let dest = unique_dest(&dir, src.file_stem().unwrap().to_string_lossy().as_ref(), &ext);
+        let stem = src
+            .file_stem()
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_else(|| "image".into());
+        let dest = unique_dest(&dir, stem.as_ref(), &ext);
         fs::copy(&src, &dest)?;
         out.insert(source, finalize_image(&dest, &doc_dir));
     }
@@ -273,8 +281,15 @@ pub fn move_images(
         }
         fs::create_dir_all(&dir)?;
         let ext = src.extension().unwrap_or_default().to_string_lossy();
-        let dest = unique_dest(&dir, src.file_stem().unwrap().to_string_lossy().as_ref(), &ext);
-        fs::rename(&src, &dest)?;
+        let stem = src
+            .file_stem()
+            .map(|s| s.to_string_lossy())
+            .unwrap_or_else(|| "image".into());
+        let dest = unique_dest(&dir, stem.as_ref(), &ext);
+        if fs::rename(&src, &dest).is_err() {
+            fs::copy(&src, &dest)?;
+            fs::remove_file(&src)?;
+        }
         out.insert(source, finalize_image(&dest, &doc_dir));
     }
     Ok(out)

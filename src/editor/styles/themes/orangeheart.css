@@ -1,0 +1,65 @@
+/* Orange Heart — 橙心，Typora 热门公众号/轻博客暖橙主题 */
+:root[data-theme="orangeheart"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+
+  --bg: #ffffff;
+  --bg-soft: #fff8f6;
+  --chrome-bg: #f7ece8;
+  --chrome-hover: #f0dfd9;
+  --chrome-active: #e8d2ca;
+  --chrome-border: #dfc4ba;
+  --text: #333333;
+  --text-muted: #666666;
+  --text-faint: #999999;
+  --heading: #222222;
+  --strong: #1a1a1a;
+
+  --border: #f0e4e0;
+  --border-strong: #e3cfc8;
+  --hover-bg: #fcf2ef;
+  --active-bg: #f8e6e0;
+
+  --accent: #ef7060;
+  --accent-soft: rgba(239, 112, 96, 0.12);
+  --accent-underline: rgba(239, 112, 96, 0.42);
+
+  --sel-bg: rgba(239, 112, 96, 0.2);
+  --caret: #ef7060;
+  --match-bg: #ffefc2;
+  --match-border: #eab65d;
+  --match-bg-strong: #ffd97d;
+
+  --code-bg: #fff5f3;
+  --code-text: #d94f3d;
+  --code-border: #f4dfda;
+  --chip-bg: #faedea;
+
+  --quote-bar: #ef7060;
+  --quote-text: #595959;
+  --quote-bg: #fff8f6;
+
+  --table-head-bg: #fdf1ee;
+  --table-zebra: #fffbfa;
+  --checkbox-border: #dfb8b0;
+
+  --panel-bg: #ffffff;
+  --btn-bg: #fbf4f2;
+  --scrollbar: #ebd7d1;
+  --scrollbar-hover: #d9bbb2;
+
+  --mark-bg: #ffe9b8;
+  --danger: #d93829;
+  --danger-soft: #fdeceb;
+
+  --syn-keyword: #d94f3d;
+  --syn-name: #333333;
+  --syn-func: #c25934;
+  --syn-const: #b45309;
+  --syn-type: #0f766e;
+  --syn-op: #c95f4a;
+  --syn-comment: #999999;
+  --syn-string: #3b8754;
+  --syn-invalid: #d93829;
+}

@@ -20,9 +20,10 @@ export class MermaidWidget extends WidgetType {
     super();
     this.code = code;
     this.from = from;
+    this.theme = document.body.dataset.mode === 'dark' ? 'dark' : 'light';
   }
   eq(other) {
-    return other.code === this.code;
+    return other.code === this.code && other.from === this.from && other.theme === this.theme;
   }
   toDOM(view) {
     const el = document.createElement('div');

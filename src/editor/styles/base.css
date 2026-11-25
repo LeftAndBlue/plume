@@ -2682,8 +2682,64 @@ body > div[id^="dmermaid"] {
 }
 
 .fmt-pop[hidden],
-.stats-pop[hidden] {
+.stats-pop[hidden],
+.cm-quick-pop[hidden] {
   display: none !important;
+}
+
+.cm-quick-pop {
+  position: fixed;
+  z-index: 60;
+  min-width: 210px;
+  max-width: 260px;
+  padding: 4px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cm-quick-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.cm-quick-item:hover,
+.cm-quick-item.is-active {
+  background: var(--hover-bg);
+  color: var(--heading);
+}
+
+.cm-quick-icon {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.cm-quick-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-quick-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
 }
 
 .fmt-pop button {

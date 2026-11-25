@@ -1,0 +1,65 @@
+/* Drake — 暗夜，Typora 最受欢迎的深色技术写作主题 */
+:root[data-theme="drake"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+
+  --bg: #1e222a;
+  --bg-soft: #181b22;
+  --chrome-bg: #14171d;
+  --chrome-hover: #212630;
+  --chrome-active: #2a303d;
+  --chrome-border: #333a4a;
+  --text: #d0d7e2;
+  --text-muted: #939ead;
+  --text-faint: #636d80;
+  --heading: #f2f5fa;
+  --strong: #ffffff;
+
+  --border: #2e3442;
+  --border-strong: #3d4557;
+  --hover-bg: #252a35;
+  --active-bg: #2d3340;
+
+  --accent: #e95f59;
+  --accent-soft: rgba(233, 95, 89, 0.16);
+  --accent-underline: rgba(233, 95, 89, 0.45);
+
+  --sel-bg: rgba(233, 95, 89, 0.24);
+  --caret: #e95f59;
+  --match-bg: #5a4a1a;
+  --match-border: #c69f44;
+  --match-bg-strong: #7d6420;
+
+  --code-bg: #262b36;
+  --code-text: #ff7970;
+  --code-border: #323948;
+  --chip-bg: #2a303c;
+
+  --quote-bar: #e95f59;
+  --quote-text: #a9b3c4;
+  --quote-bg: #232833;
+
+  --table-head-bg: #252b36;
+  --table-zebra: #212630;
+  --checkbox-border: #4e586d;
+
+  --panel-bg: #212630;
+  --btn-bg: #2a303c;
+  --scrollbar: #363e4f;
+  --scrollbar-hover: #475268;
+
+  --mark-bg: rgba(255, 209, 102, 0.26);
+  --danger: #ff7b72;
+  --danger-soft: #3d2224;
+
+  --syn-keyword: #c678dd;
+  --syn-name: #d0d7e2;
+  --syn-func: #61afef;
+  --syn-const: #d19a66;
+  --syn-type: #e5c07b;
+  --syn-op: #56b6c2;
+  --syn-comment: #6c7689;
+  --syn-string: #98c379;
+  --syn-invalid: #ff7b72;
+}

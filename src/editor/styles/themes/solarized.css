@@ -1,0 +1,65 @@
+/* Solarized Light — 暖阳护眼，经典低眩光米黄主题 */
+:root[data-theme="solarized"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+
+  --bg: #fdf6e3;
+  --bg-soft: #f5eed8;
+  --chrome-bg: #eee8d5;
+  --chrome-hover: #e4ddc8;
+  --chrome-active: #dad2bb;
+  --chrome-border: #d0c7ae;
+  --text: #586e75;
+  --text-muted: #657b83;
+  --text-faint: #93a1a1;
+  --heading: #073642;
+  --strong: #073642;
+
+  --border: #e6dfc9;
+  --border-strong: #d5ccb3;
+  --hover-bg: #f3ecda;
+  --active-bg: #eae2cd;
+
+  --accent: #268bd2;
+  --accent-soft: rgba(38, 139, 210, 0.12);
+  --accent-underline: rgba(38, 139, 210, 0.4);
+
+  --sel-bg: rgba(38, 139, 210, 0.2);
+  --caret: #268bd2;
+  --match-bg: #f5e29e;
+  --match-border: #b58900;
+  --match-bg-strong: #ebd070;
+
+  --code-bg: #eee8d5;
+  --code-text: #cb4b16;
+  --code-border: #e0d8c0;
+  --chip-bg: #e9e2ce;
+
+  --quote-bar: #2aa198;
+  --quote-text: #657b83;
+  --quote-bg: #f7f0dc;
+
+  --table-head-bg: #eee8d5;
+  --table-zebra: #faf3df;
+  --checkbox-border: #b8b099;
+
+  --panel-bg: #fdf6e3;
+  --btn-bg: #f2ebd6;
+  --scrollbar: #dfd7c1;
+  --scrollbar-hover: #c9bfa6;
+
+  --mark-bg: #f5e4a4;
+  --danger: #dc322f;
+  --danger-soft: #fae4e1;
+
+  --syn-keyword: #859900;
+  --syn-name: #586e75;
+  --syn-func: #268bd2;
+  --syn-const: #cb4b16;
+  --syn-type: #b58900;
+  --syn-op: #2aa198;
+  --syn-comment: #93a1a1;
+  --syn-string: #2aa198;
+  --syn-invalid: #dc322f;
+}

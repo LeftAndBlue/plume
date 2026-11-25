@@ -1,0 +1,65 @@
+/* One Dark — 原子深空，经典 Atom/VS Code 程序员深色主题 */
+:root[data-theme="onedark"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+
+  --bg: #282c34;
+  --bg-soft: #21252b;
+  --chrome-bg: #1c1f24;
+  --chrome-hover: #2c313a;
+  --chrome-active: #343a46;
+  --chrome-border: #3b4048;
+  --text: #abb2bf;
+  --text-muted: #828997;
+  --text-faint: #5c6370;
+  --heading: #e5eaf3;
+  --strong: #f0f4fa;
+
+  --border: #353b45;
+  --border-strong: #454c59;
+  --hover-bg: #2f343e;
+  --active-bg: #363c48;
+
+  --accent: #61afef;
+  --accent-soft: rgba(97, 175, 239, 0.15);
+  --accent-underline: rgba(97, 175, 239, 0.42);
+
+  --sel-bg: rgba(97, 175, 239, 0.24);
+  --caret: #528bff;
+  --match-bg: rgba(229, 192, 123, 0.24);
+  --match-border: #e5c07b;
+  --match-bg-strong: rgba(229, 192, 123, 0.4);
+
+  --code-bg: #21252b;
+  --code-text: #e06c75;
+  --code-border: #333842;
+  --chip-bg: #2f343f;
+
+  --quote-bar: #61afef;
+  --quote-text: #9aa2b1;
+  --quote-bg: #2c313a;
+
+  --table-head-bg: #2c313a;
+  --table-zebra: #252930;
+  --checkbox-border: #525967;
+
+  --panel-bg: #23272e;
+  --btn-bg: #2f343f;
+  --scrollbar: #3e4451;
+  --scrollbar-hover: #4e5666;
+
+  --mark-bg: rgba(229, 192, 123, 0.26);
+  --danger: #e06c75;
+  --danger-soft: #3d2428;
+
+  --syn-keyword: #c678dd;
+  --syn-name: #abb2bf;
+  --syn-func: #61afef;
+  --syn-const: #d19a66;
+  --syn-type: #e5c07b;
+  --syn-op: #56b6c2;
+  --syn-comment: #5c6370;
+  --syn-string: #98c379;
+  --syn-invalid: #e06c75;
+}

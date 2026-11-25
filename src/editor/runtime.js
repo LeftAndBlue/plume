@@ -15,6 +15,8 @@ import {
 } from "@codemirror/view";
 import { codeSelectionFit } from "./selection-fit.js";
 import { caretFit, dropCursor } from "./caret-fit.js";
+import { quickInsert } from "./quick-insert.js";
+import { countParagraphs, panguSpacing, resolveImageFolder } from "./typora-extras.js";
 import {
   defaultKeymap,
   history,
@@ -351,6 +353,7 @@ const view = new EditorView({
       caretFit,
       // 代码块里的多行选区只铺在代码文字上，不盖行号和行尾空白。
       codeSelectionFit,
+      quickInsert,
       autoPair,
       /**
        * 粘贴必须在 CM 自带的 paste 处理器之前接管。
@@ -721,11 +724,13 @@ function renderStatsPop() {
   const pop = document.getElementById("stats-pop");
   const row = (label, value) =>
     `<div class="stats-row"><span>${label}</span><b>${value}</b></div>`;
+  const paras = countParagraphs(text);
   pop.innerHTML =
     "<h4>文档统计</h4>" +
     row("字数", words.toLocaleString()) +
     row("字符", chars.toLocaleString()) +
     row("字符（不含空格）", noWs.toLocaleString()) +
+    row("段落", paras.toLocaleString()) +
     row("行数", lines.toLocaleString()) +
     row("阅读时间", mins ? `约 ${mins} 分钟` : "不到 1 分钟");
 }
@@ -2149,6 +2154,7 @@ function baseEditorContextItems() {
         { label: "五级标题", action: () => run("h5") },
         { label: "六级标题", action: () => run("h6") },
         { separator: true },
+        { label: "中英文自动加空格", action: () => run("format-spacing") },
         { label: "清除格式", disabled: empty, action: () => run("clear-format") },
       ],
     },
@@ -2554,13 +2560,24 @@ function toggleLinePrefix(prefixFn) {
   const allHave = infos.every((i) => i.m);
   const changes = [];
   for (const { line, m } of infos) {
-    if (allHave)
+    if (allHave) {
       changes.push({
         from: line.from,
         to: line.from + m[0].length,
         insert: "",
       });
-    else if (!m) changes.push({ from: line.from, insert: prefixFn.insert });
+    } else if (!m) {
+      const other = prefixFn.list ? ANY_LIST_PREFIX.exec(line.text) : null;
+      if (other) {
+        changes.push({
+          from: line.from,
+          to: line.from + other[0].length,
+          insert: other[1] + prefixFn.insert,
+        });
+      } else {
+        changes.push({ from: line.from, insert: prefixFn.insert });
+      }
+    }
   }
   if (!changes.length) return;
   const changeSet = s.changes(changes);
@@ -2582,17 +2599,22 @@ const quotePrefix = {
   match: (text) => /^\s{0,3}>\s?/.exec(text),
 };
 
+const ANY_LIST_PREFIX = /^(\s*)(?:[-*+]\s+\[[ xX]\]\s+|[-*+]\s+|\d+[.)]\s+)/;
+
 const ulPrefix = {
+  list: true,
   insert: "- ",
-  match: (text) => /^\s*[-*+]\s+\[[ xX]\]\s+|^\s*[-*+]\s+/.exec(text),
+  match: (text) => /^\s*[-*+]\s+(?!\[[ xX]\]\s+)/.exec(text),
 };
 
 const olPrefix = {
+  list: true,
   insert: "1. ",
   match: (text) => /^\s*\d+[.)]\s+/.exec(text),
 };
 
 const taskPrefix = {
+  list: true,
   insert: "- [ ] ",
   match: (text) => /^\s*[-*+]\s+\[[ xX]\]\s+/.exec(text),
 };
@@ -2601,10 +2623,7 @@ const taskPrefix = {
 
 function currentImageFolder() {
   try {
-    const parts = String(localStorage.getItem(IMAGE_FOLDER_KEY) || "assets")
-      .split(/[\\/]+/)
-      .filter((part) => part && part !== "." && part !== ".." && /^[\w\-\u4e00-\u9fa5]+$/.test(part));
-    return parts.slice(0, 4).join("/") || "assets";
+    return resolveImageFolder(localStorage.getItem(IMAGE_FOLDER_KEY) || "assets", state.path);
   } catch {
     return "assets";
   }
@@ -3369,6 +3388,10 @@ function flash(msg) {
   shell.setHint(msg);
 }
 
+document.addEventListener("plume-large-doc-fallback", () => {
+  flash("文档超过 12,000 行，已暂停块级预览以保持流畅");
+});
+
 /* ---------------- 打字机模式 ---------------- */
 
 let typewriterRaf = 0;
@@ -3761,7 +3784,11 @@ async function fillSpellList() {
   try {
     status = await window.studio.listSpell();
   } catch (err) {
-    host.innerHTML = `<p class="settings-note">读词典失败：${err && err.message ? err.message : err}</p>`;
+    host.textContent = "";
+    const note = document.createElement("p");
+    note.className = "settings-note";
+    note.textContent = "读词典失败：" + (err && err.message ? err.message : err);
+    host.appendChild(note);
     return;
   }
   host.innerHTML = (status.dictionaries || [])
@@ -3877,6 +3904,21 @@ const commands = {
   ol: () => toggleLinePrefix(olPrefix),
   task: () => toggleLinePrefix(taskPrefix),
   "clear-format": clearFormat,
+  "format-spacing": () => {
+    const orig = view.state.doc.toString();
+    const next = panguSpacing(orig);
+    if (next === orig) {
+      flash("中英文间距已规范");
+      return;
+    }
+    const head = Math.min(view.state.selection.main.head, next.length);
+    view.dispatch({
+      changes: { from: 0, to: orig.length, insert: next },
+      selection: { anchor: head },
+    });
+    flash("已为中英文混排补齐空格");
+    view.focus();
+  },
   undo: () => undo(view),
   redo: () => redo(view),
   "select-all": () => {

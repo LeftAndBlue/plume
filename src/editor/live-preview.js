@@ -188,6 +188,7 @@ function orderedNumber(doc, lineNo, width, depth = 0) {
 // 只有这些行需要随光标显形/收起。普通正文之间移动光标时，块级装饰完全不变，
 // 不必把整篇文档重新扫一遍。缓存按不可变 Text 保存，文档一变自然失效。
 const blockActivityCache = new WeakMap();
+const largeDocNotified = new WeakSet();
 const blockDebug = { computed: 0, reused: 0 };
 
 export function blockDecorationStats() {
@@ -209,8 +210,14 @@ function computeBlockDecos(state) {
   blockActivityCache.set(doc, sensitive);
   // 源代码模式：不渲染任何块，原文就是所见
   if (inSourceMode(state)) return Decoration.none;
-  // 块级扫描是全文级的：超大文档直接放弃块渲染，保证输入延迟
-  if (doc.length > 500000 || doc.lines > 12000) return Decoration.none;
+  // 块级扫描是全文级的：超大文档直接放弃块渲染，保证输入延迟并提示用户
+  if (doc.length > 500000 || doc.lines > 12000) {
+    if (!largeDocNotified.has(doc) && typeof document !== 'undefined') {
+      largeDocNotified.add(doc);
+      queueMicrotask(() => document.dispatchEvent(new CustomEvent('plume-large-doc-fallback')));
+    }
+    return Decoration.none;
+  }
   const active = activeLineSet(state);
   const out = [];
   const codeByLine = new Map();

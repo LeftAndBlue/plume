@@ -1,0 +1,65 @@
+/* Lapis — 青金石，Typora 热门学术/技术写作浅色主题 */
+:root[data-theme="lapis"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+
+  --bg: #ffffff;
+  --bg-soft: #f5f8fc;
+  --chrome-bg: #e8eef6;
+  --chrome-hover: #dbe4f0;
+  --chrome-active: #cedbe9;
+  --chrome-border: #c2cfe0;
+  --text: #354152;
+  --text-muted: #5c6b7f;
+  --text-faint: #8f9eb2;
+  --heading: #2c4c7e;
+  --strong: #1f365c;
+
+  --border: #dfe7f2;
+  --border-strong: #c8d6e8;
+  --hover-bg: #edf3fa;
+  --active-bg: #e1ebf7;
+
+  --accent: #4870ac;
+  --accent-soft: rgba(72, 112, 172, 0.12);
+  --accent-underline: rgba(72, 112, 172, 0.38);
+
+  --sel-bg: rgba(72, 112, 172, 0.18);
+  --caret: #4870ac;
+  --match-bg: #fff0b3;
+  --match-border: #e5c158;
+  --match-bg-strong: #ffd866;
+
+  --code-bg: #f4f7fb;
+  --code-text: #3b5f96;
+  --code-border: #e1e9f4;
+  --chip-bg: #ebf1f8;
+
+  --quote-bar: #4870ac;
+  --quote-text: #4c5d73;
+  --quote-bg: #f6f9fd;
+
+  --table-head-bg: #eef3fa;
+  --table-zebra: #fafcfe;
+  --checkbox-border: #b3c4dc;
+
+  --panel-bg: #ffffff;
+  --btn-bg: #f3f6fb;
+  --scrollbar: #d4dfee;
+  --scrollbar-hover: #b6c8e0;
+
+  --mark-bg: #fff2b2;
+  --danger: #c94040;
+  --danger-soft: #fdeeee;
+
+  --syn-keyword: #4870ac;
+  --syn-name: #354152;
+  --syn-func: #2b6cb0;
+  --syn-const: #b45309;
+  --syn-type: #0f766e;
+  --syn-op: #0284c7;
+  --syn-comment: #8f9eb2;
+  --syn-string: #2f855a;
+  --syn-invalid: #c94040;
+}

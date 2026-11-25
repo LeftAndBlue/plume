@@ -16,29 +16,24 @@ import templateDocCss from './styles/export/template-doc.css?raw';
 import templateBookCss from './styles/export/template-book.css?raw';
 import templatePaperCss from './styles/export/template-paper.css?raw';
 
-import whiteCss from './styles/themes/white.css?raw';
-import sepiaCss from './styles/themes/sepia.css?raw';
-import vueCss from './styles/themes/vue.css?raw';
-import nightCss from './styles/themes/night.css?raw';
-import githubCss from './styles/themes/github.css?raw';
-import newsprintCss from './styles/themes/newsprint.css?raw';
-import pixyllCss from './styles/themes/pixyll.css?raw';
-import gothicCss from './styles/themes/gothic.css?raw';
+import { DARK_THEME_IDS } from './theme-catalog.js';
 
-/** 与 theme.js 的 THEMES 保持同 id；改主题 id 时两处同步。 */
-const THEME_CSS = {
-  white: whiteCss,
-  sepia: sepiaCss,
-  vue: vueCss,
-  night: nightCss,
-  github: githubCss,
-  newsprint: newsprintCss,
-  pixyll: pixyllCss,
-  gothic: gothicCss,
-};
+/** 自动收集 styles/themes/*.css，避免新增主题时再手动同步 export-style.js。 */
+const RAW_THEMES = import.meta.glob('./styles/themes/*.css', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+});
+
+const THEME_CSS = Object.fromEntries(
+  Object.entries(RAW_THEMES).map(([path, css]) => [
+    path.replace(/^.*\/([^/]+)\.css$/, '$1'),
+    css,
+  ])
+);
 
 /** 深色主题印在纸上没有意义，PDF 统一退回浅色配色（长图仍保留深色）。 */
-const DARK_THEMES = new Set(['night', 'gothic']);
+const DARK_THEMES = DARK_THEME_IDS;
 
 export const EXPORT_TEMPLATES = [
   { id: 'doc', label: '文档' },

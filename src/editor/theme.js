@@ -1,18 +1,11 @@
 import { refreshDecorations } from './live-preview.js';
+import { APPEARANCE_KEY } from './storage-keys.js';
+import { THEMES } from './theme-catalog.js';
 
-export const THEMES = [
-  { id: 'white', label: 'White（浅色）', dark: false, swatch: ['#ffffff', '#2563eb', '#24292f'] },
-  { id: 'sepia', label: 'Sepia（羊皮纸）', dark: false, swatch: ['#f6f0e6', '#8a5a2b', '#3e3426'] },
-  { id: 'vue', label: 'Vue（翠竹）', dark: false, swatch: ['#ffffff', '#42b883', '#2c3e50'] },
-  { id: 'night', label: 'Night（深色）', dark: true, swatch: ['#1c2028', '#58a6ff', '#d4d7dd'] },
-  { id: 'github', label: 'GitHub', dark: false, swatch: ['#ffffff', '#0969da', '#1f2328'] },
-  { id: 'newsprint', label: 'Newsprint（报纸）', dark: false, swatch: ['#f4ecd8', '#8a5a2b', '#3e3426'] },
-  { id: 'pixyll', label: 'Pixyll', dark: false, swatch: ['#ffffff', '#0074d9', '#333333'] },
-  { id: 'gothic', label: 'Gothic（哥特）', dark: true, swatch: ['#0e0e0e', '#d8d8d8', '#ececec'] },
-];
+export { THEMES };
 
 const LEGACY_KEY = 'mdstudio.theme';
-const STORAGE_KEY = 'markline.appearance.v1';
+const STORAGE_KEY = APPEARANCE_KEY;
 
 const DEFAULT_PREFS = {
   theme: 'white',

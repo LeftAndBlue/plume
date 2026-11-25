@@ -817,7 +817,12 @@ export class TocWidget extends WidgetType {
         a.addEventListener('mousedown', (e) => {
           e.preventDefault();
           e.stopPropagation();
-          view.dispatch({ selection: { anchor: h.pos }, effects: EditorView.scrollIntoView(h.pos, { y: 'start' }) });
+          const isFirst = h.pos === 0 || view.state.doc.lineAt(h.pos).number <= 3;
+          view.dispatch({
+            selection: { anchor: h.pos },
+            effects: EditorView.scrollIntoView(h.pos, { y: 'start', yMargin: isFirst ? 80 : 64 }),
+          });
+          if (isFirst) view.scrollDOM.scrollTop = 0;
           view.contentDOM.focus({ preventScroll: true });
           blinkLine(view, h.pos);
         });

@@ -1,0 +1,65 @@
+/* Nord — 北欧极光，冷静低对比的北极蓝灰深色主题 */
+:root[data-theme="nord"] {
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  --h1-align: left;
+
+  --bg: #2e3440;
+  --bg-soft: #272c36;
+  --chrome-bg: #242933;
+  --chrome-hover: #353c4a;
+  --chrome-active: #3e4656;
+  --chrome-border: #434c5e;
+  --text: #d8dee9;
+  --text-muted: #a5b1c5;
+  --text-faint: #7b88a1;
+  --heading: #eceff4;
+  --strong: #ffffff;
+
+  --border: #3b4252;
+  --border-strong: #4c566a;
+  --hover-bg: #353c4a;
+  --active-bg: #3e4656;
+
+  --accent: #88c0d0;
+  --accent-soft: rgba(136, 192, 208, 0.16);
+  --accent-underline: rgba(136, 192, 208, 0.45);
+
+  --sel-bg: rgba(136, 192, 208, 0.25);
+  --caret: #88c0d0;
+  --match-bg: rgba(235, 203, 139, 0.25);
+  --match-border: #ebcb8b;
+  --match-bg-strong: rgba(235, 203, 139, 0.4);
+
+  --code-bg: #272c36;
+  --code-text: #8fbcbb;
+  --code-border: #3b4252;
+  --chip-bg: #363d4c;
+
+  --quote-bar: #81a1c1;
+  --quote-text: #b7c2d4;
+  --quote-bg: #333a47;
+
+  --table-head-bg: #353c4a;
+  --table-zebra: #313744;
+  --checkbox-border: #5a667d;
+
+  --panel-bg: #2b303b;
+  --btn-bg: #373e4d;
+  --scrollbar: #434c5e;
+  --scrollbar-hover: #546077;
+
+  --mark-bg: rgba(235, 203, 139, 0.28);
+  --danger: #bf616a;
+  --danger-soft: #3f2a30;
+
+  --syn-keyword: #81a1c1;
+  --syn-name: #d8dee9;
+  --syn-func: #88c0d0;
+  --syn-const: #d08770;
+  --syn-type: #8fbcbb;
+  --syn-op: #81a1c1;
+  --syn-comment: #6f7c95;
+  --syn-string: #a3be8c;
+  --syn-invalid: #bf616a;
+}
