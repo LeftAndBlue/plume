@@ -3,6 +3,7 @@ import { StateEffect, StateField } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { buildOutline } from './outline.js';
 import { getCodeFences, isFenceDraft } from './code-fences.js';
+import { isCursorStrictlyInside } from './typing-ergonomics.js';
 import { computeBlockWindow, scanDetailsBlocks, scanStyledInlineHtml, shouldRefreshBlockWindow } from './extrasText.js';
 import {
   footnoteDef,
@@ -434,6 +435,11 @@ function computeBlockDecos(state) {
         const alt = /^!\[([^\]]*)\]/.exec(imgSyntax);
         const editingNow = state.field(editingImageField, false);
         const editing = !!editingNow && editingNow.from === imgFrom && editingNow.to === imgTo;
+        // 盲打 `![alt](a|)` 时光标在语法内部且未进入弹窗编辑态：保留源码，防止刚敲出首字符就被 ImageWidget 吞光标
+        if (!editing && isCursorStrictlyInside(state.selection.ranges, imgFrom, imgTo)) {
+          i++;
+          continue;
+        }
         out.push(
           Decoration.replace({
             block: true,
@@ -596,6 +602,10 @@ function buildInline(view) {
     }
     const editingNow = state.field(editingImageField, false);
     const editing = !!editingNow && editingNow.from === from && editingNow.to === end;
+    // 盲打行内图片 `![alt](a|)` 时保留源码，避免刚敲出路径首字符就替换成 atomic ImageWidget
+    if (!editing && isCursorStrictlyInside(state.selection.ranges, from, end)) {
+      return false;
+    }
     const d = Decoration.replace({
       widget: new ImageWidget(
         src,
@@ -969,10 +979,14 @@ function buildInline(view) {
           if (w > 0) hide(line.from + contentStart, from);
 
           const markerEnd = eatSpace(doc, to, line.to);
-          // 任务清单行：连标记一起隐藏，只留勾选框
-          if (/^\s*(?:[-*+]|\d+[.)])\s+\[[ xX]\]/.test(line.text)) {
-            hide(from, markerEnd);
-            return;
+          // 任务清单行：连标记一起隐藏，只留勾选框；光标仍在 `[ |]` 内时保持原样不闪烁隐藏
+          const taskMatch = /^([ \t]*(?:(?:>[ \t]?)+)?[ \t]*(?:[-*+]|\d+[.)])[ \t]+)\[[ xX]\](?=[ \t]|$)/.exec(line.text);
+          if (taskMatch) {
+            const taskOpen = line.from + taskMatch[1].length;
+            if (!isCursorStrictlyInside(state.selection.ranges, taskOpen, taskOpen + 3)) {
+              hide(from, markerEnd);
+              return;
+            }
           }
           // 只替换标记本身，后面的空格留在正文流里，点击才能落到数字后面。
           if (t === '-' || t === '*' || t === '+') {
@@ -1066,11 +1080,16 @@ function buildInline(view) {
         }
       }
 
-      const task = /^(\s*(?:[-*+]|\d+[.)])\s+)\[([ xX])\](?=[ \t]|$)/.exec(text);
+      const task = /^([ \t]*(?:(?:>[ \t]?)+)?[ \t]*(?:[-*+]|\d+[.)])[ \t]+)\[([ xX])\](?=[ \t]|$)/.exec(text);
       if (task && !inFence) {
         const open = line.from + task[1].length;
-        deco.push(Decoration.replace({ widget: new TaskWidget(task[2] !== ' ', open + 1) }).range(open, open + 3));
-        if (task[2] !== ' ') addLine(line.number, 'cm-task-done');
+        const close = open + 3;
+        // 光标正落在 `[` 与 `]` 之间（例如盲打 `- [ |]` 时）保留原文，
+        // 避免 TaskWidget 提前吞掉内部光标导致后续文字全写进方括号内破坏格式。
+        if (!isCursorStrictlyInside(state.selection.ranges, open, close)) {
+          deco.push(Decoration.replace({ widget: new TaskWidget(task[2] !== ' ', open + 1) }).range(open, close));
+          if (task[2] !== ' ') addLine(line.number, 'cm-task-done');
+        }
       }
 
       // 常见无属性行内 HTML + 白名单样式 <center>/<span style>：只加表现层装饰，绝不执行任意 HTML。

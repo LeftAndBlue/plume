@@ -14,6 +14,7 @@ export const DEFAULT_INDENT_WIDTH = 2;
 const LIST_LINE_RE = /^([ \t]{0,3}(?:>[ \t]?)+)?([ \t]*)([-*+]|\d+[.)])([ \t]+)(\[[ xX]\][ \t]+)?([\s\S]*)$/;
 const QUOTE_LINE_RE = /^([ \t]*(?:>[ \t]?)+)([\s\S]*)$/;
 const EMPTY_TASK_BEFORE_SPACE_RE = /^([ \t]{0,3}(?:>[ \t]?)+)?[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[\]$/;
+const TASK_INNER_BEFORE_SPACE_RE = /^([ \t]{0,3}(?:>[ \t]?)+)?[ \t]*(?:[-*+]|\d+[.)])[ \t]+\[([ xX])$/;
 
 const BRACKET_PAIRS = {
   '{': '}',
@@ -735,8 +736,19 @@ export function outdentSoftTabOnBackspace(view, indentWidth = DEFAULT_INDENT_WID
 }
 
 /**
+ * 判断选区是否有任意光标严格落在 `[open, close)` 内部（不含两端边界）。
+ * 用于防止实时预览在用户正在编辑 `[ |]` 内部时过早替换为 TaskWidget 而困住光标。
+ */
+export function isCursorStrictlyInside(ranges, open, close) {
+  if (!Array.isArray(ranges)) return false;
+  return ranges.some((r) => r.from > open && r.to < close);
+}
+
+/**
  * 任务列表快捷输入容错：
- * 在列表项（含引用内列表）后敲 `[] `（漏敲中间空格）时，自动规范化为 `[ ] `。
+ * 1. 在列表项（含引用内列表）后敲 `[] `（漏敲中间空格）时，自动规范化为 `[ ] `；
+ * 2. 在 `- [ |]` / `- [x|]` / `- [X|]`（光标紧贴自动补全的 `]` 前）再敲空格时，
+ *    直接跳出 `]` 并在外侧补空格（`- [ ] |` / `- [x] |`），避免连续空格写进括号内破坏格式。
  */
 export function normalizeEmptyTaskListInput(view, from, to, text, isCodeBlock) {
   if (text !== ' ' || from !== to) return false;
@@ -744,6 +756,25 @@ export function normalizeEmptyTaskListInput(view, from, to, text, isCodeBlock) {
   if (isInsideCodeBlock(state, from, isCodeBlock)) return false;
   const line = state.doc.lineAt(from);
   const lineHead = state.doc.sliceString(line.from, from);
+  const nextChar = from < line.to ? state.doc.sliceString(from, from + 1) : '';
+
+  if (nextChar === ']' && TASK_INNER_BEFORE_SPACE_RE.test(lineHead)) {
+    const afterClose = from + 1 < line.to ? state.doc.sliceString(from + 1, from + 2) : '';
+    if (afterClose === ' ') {
+      view.dispatch({
+        selection: { anchor: from + 2 },
+        userEvent: 'input.type',
+      });
+    } else {
+      view.dispatch({
+        changes: { from: from + 1, to: from + 1, insert: ' ' },
+        selection: { anchor: from + 2 },
+        userEvent: 'input.type',
+      });
+    }
+    return true;
+  }
+
   if (!EMPTY_TASK_BEFORE_SPACE_RE.test(lineHead)) return false;
 
   view.dispatch({

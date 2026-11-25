@@ -54,6 +54,7 @@ import {
   handleTab,
   indentCodeBlock,
   indentList,
+  isCursorStrictlyInside,
   normalizeEmptyTaskListInput,
   outdentLength,
   outdentSoftTabOnBackspace,
@@ -716,4 +717,39 @@ test('shortcuts.js 正确归一化 Ctrl+- 与方向键并包含滚轮缩放参�
   const declared = declaredShortcuts();
   const keys = declared.map((d) => normAccel(d.keys));
   assert.equal(new Set(keys).size, keys.length, '声明的快捷键不应有重复键位');
+});
+
+test('任务列表盲打修复：光标在 [ | ] 内部不触发勾选框吞光标，且在 [ | ] / [x|] 按空格直接跳出括号', () => {
+  // 光标在 `- [ |]`（open=2, close=5, head=4）时严格位于括号内，live-preview 应保持源码
+  assert.equal(isCursorStrictlyInside([{ from: 4, to: 4 }], 2, 5), true);
+  // 光标跳到 `- [ ]|`（head=5）或 `- [ ] |`（head=6）后，不在括号内，可正常渲染勾选框
+  assert.equal(isCursorStrictlyInside([{ from: 5, to: 5 }], 2, 5), false);
+  assert.equal(isCursorStrictlyInside([{ from: 6, to: 6 }], 2, 5), false);
+
+  // 在 `- [ |]` 内再按空格：直接跳出 `]` 并补外侧空格 -> `- [ ] |`
+  const vSpace = makeMockView('- [ ]', 4);
+  assert.equal(normalizeEmptyTaskListInput(vSpace, 4, 4, ' '), true);
+  assert.equal(vSpace.text, '- [ ] ');
+  assert.equal(vSpace.pos, 6);
+
+  // 在 `- [x|]` 内按空格：跳出 `]` 并补外侧空格 -> `- [x] |`
+  const vDone = makeMockView('- [x]', 4);
+  assert.equal(normalizeEmptyTaskListInput(vDone, 4, 4, ' '), true);
+  assert.equal(vDone.text, '- [x] ');
+  assert.equal(vDone.pos, 6);
+
+  // 引用内任务列表 `> - [ |]` 按空格同样跳出
+  const vQuote = makeMockView('> - [ ]', 6);
+  assert.equal(normalizeEmptyTaskListInput(vQuote, 6, 6, ' '), true);
+  assert.equal(vQuote.text, '> - [ ] ');
+  assert.equal(vQuote.pos, 8);
+});
+
+test('盲打图片 ![alt](a|) 时光标在语法内部不触发过早替换，跳出 ) 后才渲染', () => {
+  // 模拟 `![图](a)`：from=0, to=8
+  // 光标在 `![图](a|)`（pos=7）时严格在 (0, 8) 内 -> 不应被 ImageWidget 吞光标
+  assert.equal(isCursorStrictlyInside([{ from: 7, to: 7 }], 0, 8), true);
+  // 光标跳出 `)` 到 `![图](a)|`（pos=8）或在开头（pos=0）-> 正常渲染 ImageWidget
+  assert.equal(isCursorStrictlyInside([{ from: 8, to: 8 }], 0, 8), false);
+  assert.equal(isCursorStrictlyInside([{ from: 0, to: 0 }], 0, 8), false);
 });

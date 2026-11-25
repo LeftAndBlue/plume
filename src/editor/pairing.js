@@ -24,9 +24,9 @@ import { normalizeEmptyTaskListInput, outdentLength } from './typing-ergonomics.
 /** 单字符配对：输入左边自动补右边 */
 const SINGLE = { '(': ')', '[': ']', '{': '}', '`': '`', '"': '"' };
 /** 强调符：连按两下才成对 */
-const EMPH = new Set(['*', '_', '~']);
+const EMPH = new Set(['*', '_', '~', '=']);
 /** 可以「跳过」的收尾字符 */
-const CLOSERS = new Set([')', ']', '}', '`', '"', '*', '_', '~']);
+const CLOSERS = new Set([')', ']', '}', '`', '"', '*', '_', '~', '=', '$']);
 /** 左引号允许出现的位置：行首、空白之后、或紧跟一个开括号 */
 const QUOTE_OK = /(^|[\s([{，。：；！？、])$/;
 
@@ -93,8 +93,8 @@ export function handleInput(view, from, to, text) {
   if (SINGLE[ch]) {
     if (prev === '\\') return false; // 转义字符，别管
     if (ch === '`') {
-      // 行首的 ``` 是围栏，不是行内代码；配对了反而打不出代码块
-      if (!lineHead.trim()) return false;
+      // 行首或引用前缀后的 ``` 是围栏，不是行内代码；配对了反而打不出代码块
+      if (!lineHead.replace(/^[ \t]*(?:>[ \t]?)+/, '').trim()) return false;
       if (prev === '`') return false;
     }
     if (ch === '"' && !QUOTE_OK.test(prev)) return false;
