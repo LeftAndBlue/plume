@@ -327,15 +327,11 @@ export function exitQuoteOnBackspace(view) {
     const rest = line.text.slice(matched[1].length);
 
     if (!rest.trim()) {
-      // 空引用行：整行移除，引用样式随之消失。
-      // 后面还有行时删掉本行及其换行，别把前后两行正文并成一行；
-      // 已经是最后一行时退掉上一行的换行，光标落回上一行末尾。
+      // 空引用行：直接删掉 `> ` 与上一行末尾的换行，上下文仍各自独立，光标稳稳回到上一行末尾；
+      // 仅当在第一行时才清掉本行 `> ` 留在行首。
       let from;
       let to;
-      if (line.number < state.doc.lines) {
-        from = line.from;
-        to = line.to + 1;
-      } else if (line.number > 1) {
+      if (line.number > 1) {
         from = line.from - 1;
         to = line.to;
       } else {

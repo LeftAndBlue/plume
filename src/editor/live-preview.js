@@ -663,11 +663,15 @@ function buildInline(view) {
             const end = to > from ? to - 1 : from;
             const endLine = doc.lineAt(end);
             if (parent.name === 'Document') addLine(doc.lineAt(from).number, 'cm-para-first');
-            // 下一段还是空行、而且光标就在那一行：段后距会垫在光标头顶上，看起来像多空了一行。
+            // 引用最后一行本身由 .cm-quote-last 控制内/外留白，不再叠加 cm-para-last，
+            // 避免点击引用或清空引用文字时背景框高度跳变。
+            const isQuoteLast =
+              parent.name === 'Blockquote' &&
+              endLine.number >= doc.lineAt(Math.max(parent.from, parent.to - 1)).number;
+            // 下一行本身是空行时，空行已提供完整行高，不再额外叠段后距（也不再随光标进出切换高度）。
             const nextNo = endLine.number + 1;
-            const nextIsLiveBlank =
-              nextNo <= doc.lines && !doc.line(nextNo).text.trim() && active.has(nextNo);
-            if (!nextIsLiveBlank) addLine(endLine.number, 'cm-para-last');
+            const nextIsBlank = nextNo <= doc.lines && !doc.line(nextNo).text.trim();
+            if (!isQuoteLast && !nextIsBlank) addLine(endLine.number, 'cm-para-last');
           }
         }
 

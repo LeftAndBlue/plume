@@ -1630,11 +1630,11 @@ body.focus-mode .cm-editor .cm-content {
   border-bottom: var(--block-gap) solid var(--bg);
 }
 
-.cm-quote-first {
+.cm-editor .cm-line.cm-quote.cm-quote-first {
   padding-top: 8px;
 }
 
-.cm-quote-last {
+.cm-editor .cm-line.cm-quote.cm-quote-last {
   padding-bottom: 8px;
 }
 
@@ -2287,7 +2287,7 @@ body.focus-mode .cm-editor .cm-content {
 .cm-table-wrap {
   position: relative;
   margin: 0 var(--gutter-x);
-  padding: var(--block-gap) 0;
+  padding: calc(var(--block-gap) * 0.65) 0;
   overflow: visible;
   cursor: pointer;
 }
@@ -2520,7 +2520,7 @@ body.focus-mode .cm-editor .cm-content {
 .cm-math.is-display {
   display: block;
   margin: 0 var(--gutter-x);
-  padding: var(--block-gap) 0;
+  padding: calc(var(--block-gap) * 0.65) 0;
   text-align: center;
   overflow-x: auto;
 }
@@ -2654,7 +2654,7 @@ body > div[id^="dmermaid"] {
 
 .cm-editor .cm-line.cm-blank {
   font-size: var(--editor-font-size);
-  line-height: 1.4;
+  line-height: var(--line-height);
 }
 
 /* 光标停在空行上时恢复正文行高，段后距已经在上一行拿掉，避免上边空出一大截。 */
