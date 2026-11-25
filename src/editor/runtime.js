@@ -16,6 +16,9 @@ import {
 import { codeSelectionFit } from "./selection-fit.js";
 import { caretFit, dropCursor } from "./caret-fit.js";
 import { quickInsert } from "./quick-insert.js";
+import { createContextMenu } from "./context-menu.js";
+import { createImageOps } from "./image-ops.js";
+import { createSettingsModal } from "./settings-modal.js";
 import { countParagraphs, panguSpacing, resolveImageFolder } from "./typora-extras.js";
 import {
   defaultKeymap,
@@ -1049,7 +1052,7 @@ async function moveFsEntry(source, destDir) {
   }
 }
 
-let closeActiveContextMenu = () => {};
+
 
 async function copyText(text, success = "已复制") {
   try {
@@ -1062,230 +1065,8 @@ async function copyText(text, success = "已复制") {
   }
 }
 
-/** 右键菜单里的线性图标（stroke 用 currentColor，尺寸交给 CSS）。 */
-function menuIcon(kind) {
-  const paths = {
-    cut: '<circle cx="6" cy="6" r="2.6"/><circle cx="6" cy="18" r="2.6"/><line x1="20" y1="4" x2="8.1" y2="15.9"/><line x1="14.4" y1="14.4" x2="20" y2="20"/><line x1="8.1" y1="8.1" x2="12" y2="12"/>',
-    copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/>',
-    paste:
-      '<path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1"/>',
-    trash:
-      '<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>',
-    code: '<polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>',
-    link: '<path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.4"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07L12.5 19.6"/>',
-  };
-  const el = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  el.setAttribute("viewBox", "0 0 24 24");
-  el.setAttribute("fill", "none");
-  el.setAttribute("stroke", "currentColor");
-  el.setAttribute("stroke-width", "1.7");
-  el.setAttribute("stroke-linecap", "round");
-  el.setAttribute("stroke-linejoin", "round");
-  el.setAttribute("aria-hidden", "true");
-  el.innerHTML = paths[kind] || "";
-  return el;
-}
+const { showContextMenu } = createContextMenu({ flash: (msg) => flash(msg) });
 
-function showContextMenu(event, items) {
-  event.preventDefault();
-  event.stopPropagation();
-  closeActiveContextMenu();
-  const openMenus = [];
-  const close = () => {
-    for (const m of openMenus) m.remove();
-    openMenus.length = 0;
-    document.removeEventListener("mousedown", outside, true);
-    document.removeEventListener("keydown", keys, true);
-    window.removeEventListener("resize", close);
-    if (closeActiveContextMenu === close) closeActiveContextMenu = () => {};
-  };
-  const outside = (e) => {
-    if (!openMenus.some((m) => m.contains(e.target))) close();
-  };
-  const keys = (e) => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      close();
-    }
-  };
-
-  function createMenu(menuItems, isSubmenu = false) {
-    const menu = document.createElement("div");
-    menu.className = "ft-context app-context" + (isSubmenu ? " sub-context" : "");
-    menu.setAttribute("role", "menu");
-    openMenus.push(menu);
-
-    let activeChildMenu = null;
-    let activeChildAnchor = null; // 当前子菜单挂在哪个父条目上
-    let hoverTimer = null;
-    let closeTimer = 0;
-
-    /** 收起当前二级菜单（只移除这一层，主菜单不动）。 */
-    const closeSubmenu = () => {
-      clearTimeout(closeTimer);
-      if (!activeChildMenu) return;
-      const idx = openMenus.indexOf(activeChildMenu);
-      if (idx >= 0) openMenus.splice(idx, 1);
-      activeChildMenu.remove();
-      activeChildMenu = null;
-      activeChildAnchor = null;
-    };
-
-    // 鼠标移出菜单就收起二级菜单；给 200ms 缓冲，方便斜着从父项移到子菜单里
-    menu.addEventListener("mouseleave", () => {
-      if (!activeChildMenu) return;
-      closeTimer = setTimeout(closeSubmenu, 200);
-    });
-    menu.addEventListener("mouseenter", () => clearTimeout(closeTimer));
-    // 停在菜单空白处（既不在父项也不在别的条目上）同样收起
-    menu.addEventListener("mouseover", (e) => {
-      if (!activeChildMenu || !activeChildAnchor) return;
-      if (activeChildAnchor.contains(e.target)) return;
-      closeSubmenu();
-    });
-
-    for (const item of menuItems.filter(Boolean)) {
-      if (item.separator) {
-        const sep = document.createElement("div");
-        sep.className = "context-sep";
-        menu.appendChild(sep);
-        continue;
-      }
-      // 网格行：Typora 那种一排图标 / 一排按钮的面板，而不是一条条往下排
-      if (Array.isArray(item.grid)) {
-        const grid = document.createElement("div");
-        grid.className = "context-grid";
-        grid.style.gridTemplateColumns = `repeat(${item.cols || 4}, minmax(0, 1fr))`;
-        for (const tile of item.grid.filter(Boolean)) {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "context-tile" + (tile.cls ? " " + tile.cls : "");
-          b.title = tile.title || tile.label || "";
-          b.dataset.contextAction = tile.label || tile.title || "";
-          b.disabled = !!tile.disabled;
-          if (tile.icon) b.appendChild(menuIcon(tile.icon));
-          if (tile.label) {
-            const text = document.createElement("span");
-            text.textContent = tile.label;
-            b.appendChild(text);
-          }
-          b.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-          });
-          // 移到图标/按钮格上，说明不是在挑二级菜单，顺手收起
-          b.addEventListener("mouseenter", () => {
-            clearTimeout(hoverTimer);
-            closeSubmenu();
-          });
-          b.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (b.disabled) return;
-            close();
-            tile.action?.();
-          });
-          grid.appendChild(b);
-        }
-        menu.appendChild(grid);
-        continue;
-      }
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.disabled = !!item.disabled;
-      btn.dataset.contextAction = item.label;
-      if (item.danger) btn.classList.add("is-danger");
-
-      const labelWrap = document.createElement("span");
-      labelWrap.className = "context-label";
-      if (item.checked) {
-        const check = document.createElement("span");
-        check.className = "context-check";
-        check.textContent = "✓ ";
-        labelWrap.appendChild(check);
-      }
-      labelWrap.appendChild(document.createTextNode(item.label));
-      btn.appendChild(labelWrap);
-
-      // 快捷键提示右对齐（Typora 的菜单都带这个），没有就留空
-      if (item.accel) {
-        const accel = document.createElement("span");
-        accel.className = "context-accel";
-        accel.textContent = item.accel;
-        btn.appendChild(accel);
-      }
-
-      const hasChildren = Array.isArray(item.children) && item.children.length > 0;
-      if (hasChildren) {
-        const arrow = document.createElement("span");
-        arrow.className = "context-arrow";
-        arrow.textContent = "›";
-        btn.appendChild(arrow);
-
-        const openSubmenu = () => {
-          closeSubmenu();
-          const sub = createMenu(item.children, true);
-          document.body.appendChild(sub);
-          const btnRect = btn.getBoundingClientRect();
-          let left = btnRect.right + 4;
-          let top = btnRect.top - 6;
-          const subRect = sub.getBoundingClientRect();
-          if (left + subRect.width > window.innerWidth - 8) {
-            left = Math.max(8, btnRect.left - subRect.width - 2);
-          }
-          if (top + subRect.height > window.innerHeight - 8) {
-            top = Math.max(8, window.innerHeight - subRect.height - 8);
-          }
-          sub.style.left = left + "px";
-          sub.style.top = top + "px";
-          // 鼠标进了子菜单就取消父级的收起定时；离开子菜单再延迟收起
-          sub.addEventListener("mouseenter", () => clearTimeout(closeTimer));
-          sub.addEventListener("mouseleave", () => {
-            closeTimer = setTimeout(closeSubmenu, 200);
-          });
-          activeChildMenu = sub;
-          activeChildAnchor = btn;
-        };
-
-        btn.addEventListener("mouseenter", () => {
-          clearTimeout(hoverTimer);
-          hoverTimer = setTimeout(openSubmenu, 120);
-        });
-        btn.addEventListener("click", (e) => {
-          e.stopPropagation();
-          openSubmenu();
-        });
-      } else {
-        btn.addEventListener("mouseenter", () => {
-          clearTimeout(hoverTimer);
-          closeSubmenu();
-        });
-        btn.addEventListener("click", () => {
-          close();
-          Promise.resolve(item.action?.()).catch((err) => flash("操作失败：" + (err?.message || err)));
-        });
-      }
-      menu.appendChild(btn);
-    }
-    return menu;
-  }
-
-  const mainMenu = createMenu(items);
-  document.body.appendChild(mainMenu);
-  const rect = mainMenu.getBoundingClientRect();
-  // 右下各让 6px：菜单不贴着点击处（表格单元格）出现，视觉上留一道缝
-  const x = event.clientX + 6;
-  const y = event.clientY + 6;
-  mainMenu.style.left = Math.max(6, Math.min(x, window.innerWidth - rect.width - 8)) + "px";
-  mainMenu.style.top = Math.max(6, Math.min(y, window.innerHeight - rect.height - 8)) + "px";
-  closeActiveContextMenu = close;
-  setTimeout(() => {
-    document.addEventListener("mousedown", outside, true);
-    document.addEventListener("keydown", keys, true);
-    window.addEventListener("resize", close);
-  }, 0);
-  return mainMenu;
-}
 
 async function openTreePath(path) {
   if (!(await settleCurrentDocument())) return;
@@ -1449,11 +1230,19 @@ function renderOutline() {
 
 /** 大纲点击跳转（OutlinePanel 调用）：中间的标题放到正文区正中。 */
 function outlineJump(pos, index) {
-  const y = index === 0 ? "start" : "center";
+  const isFirstLine = index === 0 && view.state.doc.lineAt(pos).number === 1;
   view.dispatch({
     selection: { anchor: pos },
-    effects: EditorView.scrollIntoView(pos, { y, yMargin: 8 }),
+    effects: isFirstLine
+      ? undefined
+      : EditorView.scrollIntoView(pos, {
+          y: index === 0 ? "start" : "center",
+          yMargin: 56,
+        }),
   });
+  if (isFirstLine) {
+    view.scrollDOM.scrollTo({ top: 0 });
+  }
   view.contentDOM.focus({ preventScroll: true });
   blinkLine(view, pos);
 }
@@ -2186,10 +1975,16 @@ function openLink(href) {
     }
     const pos = headingPosBySlug(slug);
     if (pos < 0) return false;
+    const isFirstLine = view.state.doc.lineAt(pos).number === 1;
     view.dispatch({
       selection: { anchor: pos },
-      effects: EditorView.scrollIntoView(pos, { y: "start" }),
+      effects: isFirstLine
+        ? undefined
+        : EditorView.scrollIntoView(pos, { y: "start", yMargin: 56 }),
     });
+    if (isFirstLine) {
+      view.scrollDOM.scrollTo({ top: 0 });
+    }
     view.contentDOM.focus({ preventScroll: true });
     return true;
   }
@@ -2619,417 +2414,29 @@ const taskPrefix = {
   match: (text) => /^\s*[-*+]\s+\[[ xX]\]\s+/.exec(text),
 };
 
-/* ---------------- 图片 ---------------- */
-
-function currentImageFolder() {
-  try {
-    return resolveImageFolder(localStorage.getItem(IMAGE_FOLDER_KEY) || "assets", state.path);
-  } catch {
-    return "assets";
-  }
-}
-
-/* ---------------- 图床上传（PicGo Server） ---------------- */
-
-const DEFAULT_PICGO_URL = "http://127.0.0.1:36677";
-
-/** 插入图片时的上传策略：off=只落盘（默认）、upload=自动上传、ask=每次询问。 */
-function imageUploadMode() {
-  try {
-    const v = localStorage.getItem(IMAGE_UPLOAD_MODE_KEY) || "off";
-    // 旧版本曾用 picgo 表示自动上传，等价迁移到 upload
-    return v === "picgo" ? "upload" : v;
-  } catch {
-    return "off";
-  }
-}
-
-/** 图床服务：picgo（本机 PicGo Server，支持 SM.MS/GitHub/COS/OSS 等）/ easyimage（自部署 EasyImage 2.0 直连）。 */
-function imageUploadProvider() {
-  try {
-    return localStorage.getItem(IMAGE_UPLOAD_PROVIDER_KEY) === "easyimage" ? "easyimage" : "picgo";
-  } catch {
-    return "picgo";
-  }
-}
-
-function picgoUrl() {
-  try {
-    return String(localStorage.getItem(PICGO_URL_KEY) || "").trim() || DEFAULT_PICGO_URL;
-  } catch {
-    return DEFAULT_PICGO_URL;
-  }
-}
-
-function easyimageUrl() {
-  try {
-    return String(localStorage.getItem(EASYIMAGE_URL_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-}
-
-function easyimageToken() {
-  try {
-    return String(localStorage.getItem(EASYIMAGE_TOKEN_KEY) || "").trim();
-  } catch {
-    return "";
-  }
-}
-
-/** 按当前配置的图床服务上传一张已落盘的图片，返回远程 URL。配置缺失的报错来自 Rust 侧，文案可直接展示。 */
-async function uploadViaProvider(abs) {
-  if (imageUploadProvider() === "easyimage") {
-    return window.studio.uploadImageEasyimage(abs, easyimageUrl(), easyimageToken());
-  }
-  return window.studio.uploadImage(abs, picgoUrl());
-}
-
-/**
- * 探活当前图床服务。返回 true/false；null 表示当前环境没有宿主能力（浏览器预览）。
- * 只在图床设置弹窗里用，测完把结果内联显示在按钮下方。
- */
-async function probeImageHost() {
-  const studio = window.studio;
-  if (!studio) return null;
-  try {
-    if (imageUploadProvider() === "easyimage") {
-      // 旧构建里没有这个命令时明确报「环境不支持」，而不是笼统的连接失败
-      if (!studio.pingEasyimage) return null;
-      return await studio.pingEasyimage(easyimageUrl());
-    }
-    if (!studio.pingImageUploader) return null;
-    return await studio.pingImageUploader(picgoUrl());
-  } catch {
-    return false;
-  }
-}
-
-/** 图床设置项的存储映射：键名 → [localStorage 键, 值归一化]。统一设置与独立弹窗共用。 */
-const IMAGE_SETTING_SLOTS = {
-  imageUploadMode: [IMAGE_UPLOAD_MODE_KEY, (v) => (["off", "upload", "ask"].includes(v) ? v : "off")],
-  uploadProvider: [IMAGE_UPLOAD_PROVIDER_KEY, (v) => (["picgo", "easyimage"].includes(v) ? v : "picgo")],
-  picgoUrl: [PICGO_URL_KEY, (v) => v.trim()],
-  easyimageUrl: [EASYIMAGE_URL_KEY, (v) => v.trim()],
-  easyimageToken: [EASYIMAGE_TOKEN_KEY, (v) => v.trim()],
-};
-
-function saveImageSetting(key, value) {
-  const slot = IMAGE_SETTING_SLOTS[key];
-  if (!slot) return;
-  try {
-    localStorage.setItem(slot[0], slot[1](String(value ?? "")));
-  } catch {
-    /* 存储不可用时按默认值运行，不打断设置流程 */
-  }
-}
-
-/**
- * 上传失败弹窗：原始错误 + 按服务端状态码给出的排查建议 + 一键复制。
- * 只有状态栏一闪的话，code 201 这类信息根本看不出成因，所以失败一律走弹窗。
- */
-function showUploadError(detail, { file, failures } = {}) {
-  const text = [detail, file ? `${t("images.errorFile")}：${file}` : ""].filter(Boolean).join("\n");
-  const esc = (s) =>
-    String(s ?? "").replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]));
-  const failed = failures?.length
-    ? `<p class="settings-note">${failures.length} ${t("images.errorFailedCount")}：${esc(
-        failures
-          .slice(0, 6)
-          .map((f) => f.src)
-          .join("、"),
-      )}${failures.length > 6 ? " …" : ""}</p>`
-    : "";
-  openSheet(
-    t("images.errorTitle"),
-    `<p class="settings-note">${t("images.errorLead")}</p>` +
-      `<pre class="error-detail">${esc(text)}</pre>` +
-      failed +
-      `<p class="settings-group">${t("images.errHintTitle")}</p>` +
-      `<p class="settings-note">${uploadErrorHint(detail)}</p>` +
-      `<div class="settings-actions">` +
-      `<button type="button" id="image-error-copy" class="settings-btn">${t("images.copyError")}</button>` +
-      `<button type="button" id="image-error-close" class="settings-btn">${t("images.close")}</button>` +
-      `</div>`,
-  );
-  document
-    .getElementById("image-error-copy")
-    ?.addEventListener("click", () => copyText(text, t("images.errorCopied")));
-  document.getElementById("image-error-close")?.addEventListener("click", closeSettings);
-}
-
-/** 按 EasyImage 官方状态码给排查建议；PicGo / 网络错误走通用建议。 */
-function uploadErrorHint(detail) {
-  const code = /code\s*(\d+)/i.exec(String(detail || ""))?.[1];
-  const known = ["201", "202", "203", "204", "205", "400", "401", "403", "406"];
-  return t(`images.errHint.${known.includes(code) ? code : "other"}`);
-}
-
-function docDir() {
-  return state.path ? String(state.path).replace(/[\\/][^\\/]*$/, "") : "";
-}
-
-/** 右键/批量场景：把正文里的引用解析成本地绝对路径，交 Rust 上传。 */
-function localRefToAbs(src) {
-  if (/^(?:data:|https?:|blob:|\/\/|file:)/i.test(src)) return null;
-  const clean = src.split("?")[0].split("#")[0];
-  if (/^[a-zA-Z]:[\\/]/.test(clean) || clean.startsWith("\\\\")) return clean;
-  const dir = docDir();
-  if (!dir) return null;
-  return dir + "\\" + clean.replace(/\//g, "\\").replace(/^\\+/, "");
-}
-
-/** 把正文里的若干候选引用（含 <尖括号> 形式）替换为远程 URL。 */
-function replaceImageRefs(candidates, url) {
-  const dest = imageDest(url);
-  const text = view.state.doc.toString();
-  let next = text;
-  for (const ref of [...new Set(candidates)]) {
-    if (!ref) continue;
-    next = next
-      .split(`<${ref}>`)
-      .join(dest)
-      .split(imageDest(ref))
-      .join(dest)
-      .split(ref)
-      .join(dest);
-  }
-  if (next !== text) view.dispatch({ changes: { from: 0, to: text.length, insert: next } });
-}
-
-/**
- * 上传一张已落盘的图片（saved），成功后把正文里的本地引用（candidates）改写为远程 URL。
- * 本地文件保留在 assets/ 作为备份；失败只提示，不影响已插入的本地引用。
- */
-async function uploadSavedImage(saved, candidates) {
-  if (!window.studio?.uploadImage && !window.studio?.uploadImageEasyimage) return false;
-  let url;
-  try {
-    url = await uploadViaProvider(saved.abs);
-  } catch (err) {
-    flash("图床上传失败（已保留本地引用）");
-    showUploadError(err?.message || String(err), { file: saved.rel || saved.abs });
-    return false;
-  }
-  // 未保存文档时贴的临时图：已换远程引用，保存时不再收进 assets/
-  if (saved.abs) pastedAbs.delete(saved.abs);
-  replaceImageRefs(candidates, url);
-  flash("图片已上传图床：" + url);
-  return true;
-}
-
-/**
- * 图床模式的「询问」改用应用内面板。
- * 原先走原生 blocking_show()：模态对话框会禁用整个主窗口，粘贴图片后
- * 用户只看到界面冻住（弹窗还可能在别的窗口后面），像是卡死。
- */
-function askUploadImage() {
-  return new Promise((resolve) => {
-    let settled = false;
-    const done = (v) => {
-      if (settled) return;
-      settled = true;
-      resolve(v);
-    };
-    openSheet(
-      "上传图片到图床",
-      (body, close) => {
-        const text = document.createElement("p");
-        text.className = "settings-note";
-        text.textContent = "刚插入的图片要上传到图床吗？上传成功后正文会换成远程地址，本地文件保留作备份。";
-        const row = document.createElement("div");
-        row.className = "ask-actions";
-        const group = document.createElement("div");
-        group.className = "ask-group";
-        for (const [label, value, kind] of [
-          ["上传", true, "primary"],
-          ["暂不上传", false, "ghost"],
-        ]) {
-          const b = document.createElement("button");
-          b.type = "button";
-          b.className = "btn-" + kind;
-          b.textContent = label;
-          b.addEventListener("click", () => {
-            done(value);
-            close();
-          });
-          group.appendChild(b);
-        }
-        row.append(group);
-        body.append(text, row);
-      },
-      { onClose: () => done(false) },
-    );
-  });
-}
-
-/** attachImage 落盘并插入本地引用后，按设置决定是否跟一次图床上传。 */
-function maybeUploadAfterAttach(saved, inserted) {
-  const mode = imageUploadMode();
-  if (mode !== "upload" && mode !== "ask") return;
-  const run = async () => {
-    if (mode === "ask") {
-      if (!(await askUploadImage())) return;
-    }
-    // 同时尝试 abs / rel 两种写法：用户可能在保存文档时 rel 已替换过正文里的临时绝对路径
-    await uploadSavedImage(saved, [inserted, saved.rel]);
-  };
-  run().catch(() => {});
-}
-
-/** 右键菜单：上传指定图片到图床。基于源码位置精确替换，避免全文重写的竞态。 */
-async function uploadImageFromMenu(el) {
-  const info = imageSourceRange(el);
-  if (!info || !state.path || !window.studio?.uploadImageEasyimage) return flash("请先保存文档，再上传本地图片");
-  const abs = localRefToAbs(info.src);
-  if (!abs) return flash("远程或内嵌图片无需上传");
-  let url;
-  try {
-    url = await uploadViaProvider(abs);
-  } catch (err) {
-    return showUploadError(err?.message || String(err), { file: info.src });
-  }
-  const at = info.raw.indexOf(info.src);
-  if (at < 0) return flash("图片源码位置已变化，请重试");
-  const raw = info.raw.slice(0, at) + imageDest(url) + info.raw.slice(at + info.src.length);
-  view.dispatch({ changes: { from: info.from, to: info.to, insert: raw } });
-  flash("图片已上传图床：" + url);
-}
-
-/** 命令：把本文所有本地图片批量上传到图床，成功一张改写一张。 */
-async function uploadDocumentImages() {
-  if (!state.path || !window.studio?.uploadImageEasyimage) return flash("请先保存文档并配置图床，再批量上传");
-  const re = /(!\[[^\]\n]*\]\()([^)\n]+)(\))/g;
-  const seen = new Set();
-  let m;
-  while ((m = re.exec(view.state.doc.toString()))) {
-    const body = m[2].trim();
-    const src = /^<([^>]+)>/.exec(body)?.[1] || body.split(/\s+["']/)[0].trim();
-    const abs = src && localRefToAbs(src);
-    if (abs) seen.add(JSON.stringify([src, abs]));
-  }
-  const items = [...seen].map((s) => JSON.parse(s));
-  if (!items.length) return flash("本文没有可上传的本地图片");
-  let ok = 0;
-  const failures = [];
-  for (const [src, abs] of items) {
-    let url;
-    try {
-      url = await uploadViaProvider(abs);
-    } catch (err) {
-      failures.push({ src, msg: err?.message || String(err) });
-      continue;
-    }
-    // 正文里的引用是相对路径 src；abs 一并列入以覆盖未保存文档的绝对引用写法
-    replaceImageRefs([src, abs], url);
-    ok++;
-  }
-  flash(ok ? `已上传 ${ok} 张图片到图床${failures.length ? `，${failures.length} 张失败` : ""}` : "全部图片上传失败");
-  if (failures.length) showUploadError(failures[0].msg, { failures });
-}
-
-/** 文档还没保存时粘贴的图片，记的是临时目录里的绝对路径。保存时再收进 assets/。 */
-const pastedAbs = new Set();
-
-function imageDest(rel) {
-  return /[\s()]/.test(rel) ? `<${rel}>` : rel;
-}
-
-/**
- * 图片落盘 + 插入。三个入口（选择文件 / 粘贴 / 拖入）共用。
- *
- * 文档已经有路径：写到旁边的 assets/，插入相对路径。
- * 还没保存：先写到临时目录并插入绝对路径，马上就能显示，不必先另存。
- * 之后真正保存时，settlePastedImages 会把这些图拷进文档目录并改成相对路径。
- */
-async function attachImage(buf, ext) {
-  if (!window.studio) return false;
-  const saved = await window.studio.saveImage(buf, ext, state.path || null, currentImageFolder());
-  if (!saved) return false;
-  // saveImage 返回 { abs, rel, doc_dir }：已保存文档插入相对路径，未保存插入绝对路径（先能显示）。
-  const dest = state.path ? saved.rel : saved.abs;
-  if (!dest) return false;
-  if (!state.path) pastedAbs.add(saved.abs);
-  insertAtCursor(`![](${imageDest(dest)})`);
-  flash(state.path ? "图片已保存到 " + saved.rel : "图片已插入");
-  // 图床模式：先落盘保证立即可见，上传成功后再把引用改写为远程 URL（本地文件保留作备份）
-  maybeUploadAfterAttach(saved, dest);
-  return true;
-}
-
-/** 把未保存时粘贴的临时图片收进文档旁边的 assets/，并改写正文里的路径。 */
-async function settlePastedImages(content, docPath) {
-  if (!pastedAbs.size || !window.studio || !docPath) return content;
-  let next = content;
-  for (const abs of [...pastedAbs]) {
-    if (!next.includes(abs)) {
-      pastedAbs.delete(abs);
-      continue;
-    }
-    const saved = await window.studio.adoptImage(abs, docPath, currentImageFolder());
-    if (!saved) continue;
-    const dest = imageDest(saved.rel || saved);
-    next = next.split(`<${abs}>`).join(dest);
-    next = next.split(abs).join(dest);
-  }
-  return next;
-}
-
-function forgetMissingPastes(text) {
-  for (const abs of [...pastedAbs]) {
-    if (!text.includes(abs)) pastedAbs.delete(abs);
-  }
-}
-
-async function collectDocumentImages() {
-  if (!state.path || !window.studio?.collectImages) {
-    flash("请先保存文档，再整理图片");
-    return;
-  }
-  const text = view.state.doc.toString();
-  const sources = new Set();
-  const re = /(!\[[^\]\n]*\]\()([^)\n]+)(\))/g;
-  let m;
-  while ((m = re.exec(text))) {
-    const body = m[2].trim();
-    const src = /^<([^>]+)>/.exec(body)?.[1] || body.split(/\s+["']/)[0].trim();
-    if (src && !/^(?:data:|https?:|file:|blob:|\/\/)/i.test(src)) sources.add(src);
-  }
-  if (!sources.size) {
-    flash("本文没有需要整理的本地图片");
-    return;
-  }
-  const moved = await window.studio.collectImages([...sources], state.path, currentImageFolder());
-  let changed = 0;
-  const next = text.replace(re, (whole, head, raw, tail) => {
-    const body = raw.trim();
-    const src = /^<([^>]+)>/.exec(body)?.[1] || body.split(/\s+["']/)[0].trim();
-    // collectImages 返回 { 源路径: { abs, rel, doc_dir } }，替换时用相对路径字段。
-    const target = moved[src] && (moved[src].rel || moved[src]);
-    if (!target || target === src) return whole;
-    changed++;
-    return head + raw.replace(src, target) + tail;
-  });
-  if (changed) {
-    view.dispatch({ changes: { from: 0, to: text.length, insert: next } });
-    await save();
-  }
-  flash(changed ? `已整理 ${changed} 处图片引用到 ${currentImageFolder()}/` : "图片已经在当前目录中");
-}
-
-function pickImage() {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = "image/*";
-  input.addEventListener("change", async () => {
-    const file = input.files && input.files[0];
-    if (!file) return;
-    const ext = file.name.split(".").pop() || "png";
-    if (window.studio) await attachImage(await file.arrayBuffer(), ext);
-    else insertAtCursor(`![](${URL.createObjectURL(file)})`);
-  });
-  input.click();
-}
+/* ---------------- 图片与图床（已抽离至 image-ops.js） ---------------- */
+const imageOps = createImageOps({
+  view,
+  state,
+  flash: (msg) => flash(msg),
+  copyText,
+  insertAtCursor,
+  imageSourceRange,
+  openSheet: (...args) => openSheet(...args),
+  closeSettings: () => closeSettings(),
+  run: (cmd) => run(cmd),
+  save: () => save(),
+});
+const {
+  attachImage,
+  collectDocumentImages,
+  currentImageFolder,
+  forgetMissingPastes,
+  pickImage,
+  settlePastedImages,
+  uploadDocumentImages,
+  uploadImageFromMenu,
+} = imageOps;
 
 /* ---------------- 文件 ---------------- */
 
@@ -3364,6 +2771,22 @@ const doExportEpub = async () => (await loadExportCommands()).doExportEpub();
 const doExportPng = async () => (await loadExportCommands()).doExportPng();
 const doExportPdf = async () => (await loadExportCommands()).doExportPdf();
 
+/* ---------------- 设置 / 主题商店 / 许可弹窗（已抽离至 settings-modal.js） ---------------- */
+const {
+  openSheet,
+  closeSettings,
+  showLicense,
+  openThemeStore,
+  openSettings,
+  openImageSettings,
+} = createSettingsModal({
+  state,
+  flash: (msg) => flash(msg),
+  getImageOps: () => imageOps,
+  exportSettings: () => exportSettings(),
+  importSettings: () => importSettings(),
+});
+
 const quickOpen = createQuickOpen({
   state,
   openSheet,
@@ -3482,349 +2905,6 @@ function applySpellcheck() {
   const on = !!getAppearance().spellcheck;
   if (view?.contentDOM) view.contentDOM.spellcheck = on;
   window.studio?.setSpellcheck?.(on);
-}
-
-const LICENSE_TEXT = [
-  "Plume 以 MIT 许可证开源，仓库根目录 LICENSE 文件为准。",
-  "",
-  `MIT License
-
-Copyright (c) 2026 LeftAndBlue
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.`,
-  "",
-  "界面里用到的第三方组件各自保留原许可证：",
-  "Tauri、CodeMirror、Lezer、KaTeX、Mermaid、Vue、Lucide。",
-].join("\n");
-
-/** 打开设置面板：content 可以是 HTML 字符串，也可以是 (body, close) 回调（用于需要绑事件的询问面板）。 */
-let sheetOnClose = null;
-function openSheet(title, content, options) {
-  const panel = document.getElementById("settings");
-  const body = document.getElementById("settings-body");
-  const heading = document.getElementById("settings-title");
-  if (!panel || !body) return;
-  if (heading) heading.textContent = title;
-  panel.querySelector('.settings-card')?.classList.toggle("is-wide", !!options?.wide);
-  sheetOnClose = typeof options?.onClose === "function" ? options.onClose : null;
-  body.replaceChildren();
-  if (typeof content === "function") content(body, closeSettings);
-  else body.innerHTML = content ?? "";
-  panel.hidden = false;
-}
-
-function showLicense() {
-  openSheet("许可", `<pre class="license-copy">${LICENSE_TEXT.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]))}</pre>`);
-}
-
-function openThemeStore() {
-  const current = currentThemeId();
-  const cards = THEMES.map((t) => {
-    const [paper, accent, ink] = t.swatch;
-    return `<button type="button" class="theme-card${t.id === current ? " is-on" : ""}" data-theme="${t.id}">
-      <span class="theme-swatch" style="background:${paper};color:${ink}"><i style="background:${accent}"></i>Aa</span>
-      <span>${t.label}</span>
-    </button>`;
-  }).join("");
-  openSheet(
-    "主题商店",
-    `<div class="theme-grid">${cards}</div>
-     <button type="button" id="back-settings" class="settings-btn">返回设置</button>
-     <button type="button" id="theme-folder" class="settings-btn">打开主题文件夹</button>
-     <p class="settings-note">这里的主题都已经装在程序里。主题文件夹中的「主题名.user.css」会盖在对应主题上面，用来细调颜色和字体。</p>`,
-  );
-  document.getElementById("settings-body")?.querySelectorAll("[data-theme]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      applyTheme(btn.dataset.theme);
-      document.querySelectorAll(".theme-card").forEach((card) => {
-        card.classList.toggle("is-on", card.dataset.theme === btn.dataset.theme);
-      });
-    });
-  });
-  document.getElementById("theme-folder")?.addEventListener("click", () => window.studio?.openThemeFolder());
-  document.getElementById("back-settings")?.addEventListener("click", () => openSettings());
-}
-
-function rangeField(label, key, value, min, max, step, suffix) {
-  return `<label class="settings-row"><span>${label}</span><input data-k="${key}" data-suffix="${suffix || ""}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"><b data-for="${key}">${value}${suffix || ""}</b></label>`;
-}
-
-async function openSettings() {
-  const prefs = getAppearance();
-  const opt = (value, text, current) =>
-    `<option value="${value}"${String(value) === String(current) ? " selected" : ""}>${text}</option>`;
-  const field = (label, html) => `<label class="settings-row"><span>${label}</span>${html}</label>`;
-  openSheet(
-    t("settings.title"),
-    `<p class="settings-group">${t("settings.general")}</p>` +
-      field(
-        t("settings.language"),
-        `<select id="locale-select">${LOCALES.map((l) => opt(l.id, l.label, i18n.locale)).join("")}</select>`,
-      ) +
-      `<p class="settings-group">${t("settings.appearance")}</p>` +
-      field(t("settings.theme"), `<select data-k="theme">${THEMES.map((th) => opt(th.id, th.label, prefs.theme)).join("")}</select>`) +
-      field(
-        t("settings.density"),
-        `<select data-k="density">${opt("compact", t("settings.density.compact"), prefs.density)}${opt("comfortable", t("settings.density.comfortable"), prefs.density)}${opt("loose", t("settings.density.loose"), prefs.density)}</select>`,
-      ) +
-      rangeField(t("settings.fontSize"), "fontSize", prefs.fontSize, 12, 28, 1, "") +
-      rangeField(t("settings.lineHeight"), "lineHeight", prefs.lineHeight, 1.4, 2.2, 0.05, "") +
-      rangeField(t("settings.paraEm"), "paraEm", prefs.paraEm, 0, 2, 0.05, "em") +
-      rangeField(t("settings.blockPx"), "blockPx", prefs.blockPx, 0, 32, 1, "px") +
-      rangeField(t("settings.contentPx"), "contentPx", prefs.pageWidth === "full" ? 800 : prefs.contentPx, 640, 1200, 20, "px") +
-      field(t("settings.pageFull"), `<input data-k="pageFull" type="checkbox"${prefs.pageWidth === "full" ? " checked" : ""}>`) +
-      field(
-        t("settings.fontStyle"),
-        `<select data-k="fontStyle">${opt("theme", t("settings.fontStyle.theme"), prefs.fontStyle)}${opt("sans", t("settings.fontStyle.sans"), prefs.fontStyle)}${opt("serif", t("settings.fontStyle.serif"), prefs.fontStyle)}${opt("custom", t("settings.fontStyle.custom"), prefs.fontStyle)}</select>`,
-      ) +
-      field(t("settings.fontFamily"), `<input data-k="fontFamily" type="text" value="${String(prefs.fontFamily || "").replace(/"/g, "&quot;")}" placeholder="${t("settings.fontFamilyPh")}">`) +
-      rangeField(t("settings.codePx"), "codePx", prefs.codePx || 0, 0, 22, 1, "") +
-      field(t("settings.firstLineIndent"), `<input data-k="firstLineIndent" type="checkbox"${prefs.firstLineIndent ? " checked" : ""}>`) +
-      field(t("settings.codeLineNumbers"), `<input data-k="codeLineNumbers" type="checkbox"${prefs.codeLineNumbers ? " checked" : ""}>`) +
-      `<p class="settings-note">${t("settings.appearanceNote")}</p>` +
-      `<button type="button" id="open-theme-store" class="settings-btn">${t("settings.openThemeStore")}</button>` +
-      `<p class="settings-group">${t("settings.exportGroup")}</p>` +
-      field(
-        t("settings.exportTemplate"),
-        `<select data-k="exportTemplate">${opt("doc", t("settings.exportTemplate.doc"), prefs.exportTemplate)}${opt("book", t("settings.exportTemplate.book"), prefs.exportTemplate)}${opt("paper", t("settings.exportTemplate.paper"), prefs.exportTemplate)}</select>`,
-      ) +
-      `<p class="settings-note">${t("settings.exportTemplateNote")}</p>` +
-      `<p class="settings-group">${t("settings.spelling")}</p>` +
-      field(t("settings.spellcheck"), `<input data-k="spellcheck" type="checkbox"${prefs.spellcheck ? " checked" : ""}>`) +
-      `<div id="spell-list"><p class="settings-note">${t("settings.spellLoading")}</p></div>` +
-      `<p class="settings-note">${t("settings.spellNote")}</p>` +
-      `<p class="settings-group">${t("settings.images")}</p>` +
-      field(t("settings.imageFolder"), `<input data-k="imageFolder" type="text" value="${currentImageFolder().replace(/"/g, "&quot;")}" placeholder="${t("settings.imageFolderPh")}">`) +
-      `<p class="settings-note">${t("settings.imageNote")}</p>` +
-      `<button type="button" id="settings-collect-images" class="settings-btn">${t("settings.collectImages")}</button>` +
-      `<div class="settings-actions"><button type="button" id="settings-image-host" class="settings-btn">${t("settings.openImageHost")}</button></div>` +
-      `<p></p>` +
-      `<button type="button" id="settings-clear-recent" class="settings-btn">${t("settings.clearRecent")}</button>` +
-      `<p class="settings-group">${t("settings.backup")}</p>` +
-      `<p class="settings-note">${t("settings.backupNote")}</p>` +
-      `<div class="settings-actions"><button type="button" id="settings-export" class="settings-btn">${t("settings.export")}</button><button type="button" id="settings-import" class="settings-btn">${t("settings.import")}</button></div>`,
-  );
-  const body = document.getElementById("settings-body");
-  const write = (el) => {
-    const key = el.dataset.k;
-    if (key === "imageFolder") {
-      try {
-        localStorage.setItem(IMAGE_FOLDER_KEY, el.value.trim() || "assets");
-      } catch {
-        /* 记住目录是增强项，存储不可用时不影响插图 */
-      }
-      return;
-    }
-    if (el.type === "checkbox" && key === "pageFull") {
-      updateAppearance({ pageWidth: el.checked ? "full" : "custom" });
-      return;
-    }
-    if (el.type === "checkbox") {
-      updateAppearance({ [key]: el.checked });
-      return;
-    }
-    if (key === "fontSize" || key === "blockPx" || key === "codePx" || key === "contentPx") {
-      const n = Number(el.value);
-      const patch = { [key]: n };
-      if (key === "contentPx") patch.pageWidth = "custom";
-      if (key === "fontFamily") patch.fontStyle = "custom";
-      updateAppearance(patch);
-    } else if (key === "lineHeight" || key === "paraEm") {
-      updateAppearance({ [key]: Number(el.value) });
-    } else if (key === "density") {
-      applyAppearanceCommand("density:" + el.value);
-    } else if (key === "fontFamily") {
-      updateAppearance({ fontFamily: el.value, fontStyle: el.value ? "custom" : getAppearance().fontStyle });
-    } else updateAppearance({ [key]: el.type === "number" ? Number(el.value) : el.value });
-    const out = body.querySelector(`[data-for="${key}"]`);
-    if (out) out.textContent = el.value + (el.dataset.suffix || "");
-  };
-  body.querySelectorAll("[data-k]").forEach((el) => {
-    el.addEventListener("input", () => write(el));
-    el.addEventListener("change", () => write(el));
-  });
-  document.getElementById("settings-clear-recent")?.addEventListener("click", () => {
-    localStorage.removeItem(RECENT_KEY);
-    flash("最近打开已清空");
-  });
-  document.getElementById("settings-export")?.addEventListener("click", () => {
-    exportSettings().catch((err) => flash("导出设置失败：" + (err && err.message ? err.message : err)));
-  });
-  document.getElementById("settings-import")?.addEventListener("click", () => {
-    importSettings().catch((err) => flash("导入设置失败：" + (err && err.message ? err.message : err)));
-  });
-  document.getElementById("open-theme-store")?.addEventListener("click", openThemeStore);
-  // 切换语言：持久化 + 通知菜单栏，再按新语言重画面板
-  document.getElementById("locale-select")?.addEventListener("change", (e) => {
-    setLocale(e.target.value);
-    openSettings();
-  });
-  document.getElementById("settings-collect-images")?.addEventListener("click", () => {
-    collectDocumentImages().catch((err) => flash("整理图片失败：" + (err?.message || err)));
-  });
-  document.getElementById("settings-image-host")?.addEventListener("click", () => openImageSettings());
-  fillSpellList();
-}
-
-/**
- * 独立「图床设置」弹窗：只放图床相关内容（插入方式、服务选择、凭据、测试、批量上传）。
- * 统一设置面板里只留本地图片目录，点「图床设置…」跳到这里。
- */
-function openImageSettings() {
-  const q = (v) => String(v ?? "").replace(/"/g, "&quot;");
-  const opt = (value, text, current) =>
-    `<option value="${value}"${String(value) === String(current) ? " selected" : ""}>${text}</option>`;
-  const row = (label, html) => `<label class="settings-row"><span>${label}</span>${html}</label>`;
-  const provider = imageUploadProvider();
-
-  openSheet(
-    t("images.settingsTitle"),
-    `<p class="settings-group">${t("images.insertGroup")}</p>` +
-      row(
-        t("settings.imageUploadMode"),
-        `<select data-img="imageUploadMode">${opt("off", t("settings.imageUpload.off"), imageUploadMode())}${opt("upload", t("settings.imageUpload.upload"), imageUploadMode())}${opt("ask", t("settings.imageUpload.ask"), imageUploadMode())}</select>`,
-      ) +
-      `<p class="settings-note">${t("images.modeNote")}</p>` +
-      `<p class="settings-group">${t("images.providerGroup")}</p>` +
-      row(
-        t("settings.uploadProvider"),
-        `<select data-img="uploadProvider">${opt("picgo", "PicGo（本机应用）", provider)}${opt("easyimage", "EasyImage（自部署）", provider)}</select>`,
-      ) +
-      `<div data-provider="picgo">` +
-      row(t("settings.picgoUrl"), `<input data-img="picgoUrl" type="text" value="${q(picgoUrl())}" placeholder="${DEFAULT_PICGO_URL}">`) +
-      `<p class="settings-note">${t("images.picgoNote")}</p>` +
-      `</div>` +
-      `<div data-provider="easyimage">` +
-      row(t("settings.easyimageUrl"), `<input data-img="easyimageUrl" type="text" value="${q(easyimageUrl())}" placeholder="https://img.example.com">`) +
-      row(t("settings.easyimageToken"), `<input data-img="easyimageToken" type="password" value="${q(easyimageToken())}" placeholder="${t("settings.easyimageTokenPh")}">`) +
-      `<p class="settings-note">${t("images.easyimageNote")}</p>` +
-      `</div>` +
-      `<div class="settings-actions">` +
-      `<button type="button" id="image-host-test" class="settings-btn">${t("settings.picgoTest")}</button>` +
-      `<button type="button" id="image-host-upload" class="settings-btn">${t("menu.uploadImages")}</button>` +
-      `</div>` +
-      `<p class="settings-note" id="image-host-state"></p>` +
-      `<p class="settings-note">${t("images.localNote")}</p>`,
-  );
-
-  const panel = document.getElementById("settings-body");
-  if (!panel) return;
-
-  /** 只显示当前选中服务的配置块；切换服务时清掉旧的测试结果，避免误导。 */
-  const paintProvider = () => {
-    const active = imageUploadProvider();
-    panel.querySelectorAll("[data-provider]").forEach((el) => {
-      el.hidden = el.dataset.provider !== active;
-    });
-    const state = document.getElementById("image-host-state");
-    if (state) {
-      state.textContent = "";
-      state.className = "settings-note";
-    }
-  };
-  paintProvider();
-
-  panel.querySelectorAll("[data-img]").forEach((el) => {
-    const save = () => {
-      saveImageSetting(el.dataset.img, el.value);
-      if (el.dataset.img === "uploadProvider") paintProvider();
-    };
-    // 输入框边打边存；下拉框在 change 时存
-    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", save);
-  });
-
-  document.getElementById("image-host-test")?.addEventListener("click", async () => {
-    const btn = document.getElementById("image-host-test");
-    const state = document.getElementById("image-host-state");
-    const label = btn.textContent;
-    btn.disabled = true;
-    btn.textContent = t("images.testing");
-    state.textContent = "";
-    state.className = "settings-note";
-    try {
-      const ok = await probeImageHost();
-      state.textContent = ok === null ? t("images.unsupported") : ok ? t("settings.picgoOk") : t("settings.picgoFail");
-      if (ok !== null) state.classList.add(ok ? "is-ok" : "is-bad");
-    } finally {
-      btn.disabled = false;
-      btn.textContent = label;
-    }
-  });
-
-  document.getElementById("image-host-upload")?.addEventListener("click", () => {
-    closeSettings();
-    uploadDocumentImages().catch((err) => flash("上传图片失败：" + (err?.message || err)));
-  });
-}
-
-async function fillSpellList() {
-  const host = document.getElementById("spell-list");
-  if (!host) return;
-  if (!window.studio?.listSpell) {
-    host.innerHTML = `<p class="settings-note">词典下载需要桌面版。浏览器里只能使用系统自带的拼写检查。</p>`;
-    return;
-  }
-  let status;
-  try {
-    status = await window.studio.listSpell();
-  } catch (err) {
-    host.textContent = "";
-    const note = document.createElement("p");
-    note.className = "settings-note";
-    note.textContent = "读词典失败：" + (err && err.message ? err.message : err);
-    host.appendChild(note);
-    return;
-  }
-  host.innerHTML = (status.dictionaries || [])
-    .map((item) => {
-      const ready = item.installed
-        ? `<span class="spell-ready">${item.systemOnly ? "系统已安装" : "已下载"}</span>`
-        : item.systemOnly
-          ? `<span>系统未安装</span>`
-          : `<button type="button" class="settings-btn" data-dict="${item.id}">下载</button>`;
-      return `<div class="spell-row"><span>${item.label}</span>${ready}</div>`;
-    })
-    .join("");
-  host.querySelectorAll("[data-dict]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const lang = btn.dataset.dict;
-      btn.disabled = true;
-      btn.innerHTML = '<span class="motion-loading" aria-hidden="true"><i></i><i></i><i></i></span>';
-      try {
-        await window.studio.downloadSpell(lang);
-        await fillSpellList();
-        flash("词典已下载");
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = "重试";
-        flash("下载失败：" + (err && err.message ? err.message : err));
-      }
-    });
-  });
-}
-
-function closeSettings() {
-  const panel = document.getElementById("settings");
-  const hook = sheetOnClose;
-  sheetOnClose = null;
-  if (panel) panel.hidden = true;
-  if (hook) hook();
 }
 
 function bindSidebarSplit() {
