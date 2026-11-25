@@ -1,6 +1,6 @@
 {
   "productName": "Plume",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "identifier": "com.plume.editor",
   "build": {
     "frontendDist": "../dist",
