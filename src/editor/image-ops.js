@@ -9,7 +9,7 @@ import {
   IMAGE_UPLOAD_PROVIDER_KEY,
   PICGO_URL_KEY,
 } from './storage-keys.js';
-import { resolveImageFolder } from './typora-extras.js';
+import { DEFAULT_IMAGE_FOLDER_TEMPLATE, resolveImageFolder } from './extrasText.js';
 import { t } from '../i18n.js';
 
 export function createImageOps({
@@ -26,9 +26,17 @@ export function createImageOps({
 }) {
 /* ---------------- 图片 ---------------- */
 
+function rawImageFolderTemplate() {
+  try {
+    return String(localStorage.getItem(IMAGE_FOLDER_KEY) || DEFAULT_IMAGE_FOLDER_TEMPLATE).trim() || DEFAULT_IMAGE_FOLDER_TEMPLATE;
+  } catch {
+    return DEFAULT_IMAGE_FOLDER_TEMPLATE;
+  }
+}
+
 function currentImageFolder() {
   try {
-    return resolveImageFolder(localStorage.getItem(IMAGE_FOLDER_KEY) || "assets", state.path);
+    return resolveImageFolder(rawImageFolderTemplate(), state.path);
   } catch {
     return "assets";
   }
@@ -439,6 +447,7 @@ function pickImage() {
 
   return {
     DEFAULT_PICGO_URL,
+    rawImageFolderTemplate,
     currentImageFolder,
     imageUploadMode,
     imageUploadProvider,

@@ -38,6 +38,7 @@ export const useShellStore = defineStore('shell', {
     dirty: false,
     words: 0,
     lines: 0,
+    wordGoal: 0,
     hint: '',
     /** 最近一次保存失败的错误信息；非空时状态栏常驻提示并提供重试。 */
     saveError: '',
@@ -74,6 +75,9 @@ export const useShellStore = defineStore('shell', {
     setStatus({ words, lines }) {
       this.words = words;
       this.lines = lines;
+    },
+    setWordGoal(goal) {
+      this.wordGoal = Math.max(0, Math.round(Number(goal) || 0));
     },
     setHint(msg) {
       this.hint = msg;

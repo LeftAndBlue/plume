@@ -285,6 +285,22 @@ async fn fs_search(
 }
 
 #[tauri::command]
+async fn fs_replace(
+    dir: String,
+    query: String,
+    replacement: String,
+    opts: Option<fs_ops::SearchOpts>,
+) -> Result<fs_ops::ReplaceOutcome, String> {
+    let opts = opts.unwrap_or_default();
+    tauri::async_runtime::spawn_blocking(move || {
+        fs_ops::replace_in_files(&dir, &query, &replacement, opts)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(cmd_err)
+}
+
+#[tauri::command]
 fn fs_create(root: String, dir: String, name: String, directory: bool) -> Result<String, String> {
     fs_ops::create_entry(&root, &dir, &name, directory).map_err(cmd_err)
 }
@@ -634,6 +650,7 @@ pub fn run() {
             file_save_as,
             fs_list,
             fs_search,
+            fs_replace,
             fs_create,
             fs_rename,
             fs_trash,

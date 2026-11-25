@@ -4,6 +4,8 @@
  */
 
 export const DRAFT_KEY = "plume.recovery.v1";
+export const DRAFT_LIST_KEY = "plume.recovery.list.v1";
+export const WORD_GOAL_KEY = "plume.wordGoals.v1";
 export const SIDE_KEY = "plume.side";
 export const SIDE_OPEN_KEY = "plume.sidebar";
 export const SIDEBAR_WIDTH_KEY = "plume.sidebarWidth";
@@ -37,4 +39,5 @@ export const SETTINGS_KEYS = [
   TABS_VISIBLE_KEY,
   RECENT_KEY,
   LOCALE_KEY,
+  WORD_GOAL_KEY,
 ];

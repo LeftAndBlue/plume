@@ -2888,3 +2888,368 @@ body > div[id^="dmermaid"] {
   color: var(--text-muted);
   font-size: 12px;
 }
+
+
+/* ---------------- Typora 增强功能样式 ---------------- */
+
+/* 1. 图片拖拽缩放手柄与实时像素提示 */
+.cm-image {
+  position: relative;
+}
+.cm-image-resize {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: var(--accent, #2563eb);
+  border: 2px solid var(--bg, #fff);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.14s ease;
+  z-index: 4;
+}
+.cm-image:hover .cm-image-resize,
+.cm-image.is-editing .cm-image-resize,
+.cm-image.is-resizing .cm-image-resize {
+  opacity: 1;
+}
+.cm-image-size-tip {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--mono, monospace);
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+  pointer-events: none;
+  z-index: 5;
+}
+.settings-preview {
+  font-family: var(--mono, monospace);
+  color: var(--accent, #2563eb);
+}
+
+/* 2. H1-H3 标题章节折叠：去掉默认灰底竖线，悬停才显形（已折叠项常驻提示） */
+.cm-editor .cm-gutters,
+.cm-editor .cm-gutters.cm-gutters-before {
+  background: transparent;
+  border: none;
+  color: var(--text-faint, #888);
+}
+.cm-heading-fold-marker {
+  display: inline-block;
+  width: 14px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--muted, #888);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s ease, color 0.14s ease;
+}
+.cm-editor .cm-gutters:hover .cm-heading-fold-marker,
+.cm-editor:has(.cm-heading:hover) .cm-heading-fold-marker {
+  opacity: 0.45;
+}
+.cm-editor .cm-gutters .cm-heading-fold-marker.is-closed,
+.cm-editor .cm-gutters .cm-heading-fold-marker:hover {
+  opacity: 1;
+  color: var(--accent, #2563eb);
+}
+.cm-heading-fold-pill {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted, #666);
+  background: var(--hover, rgba(128, 128, 128, 0.12));
+  cursor: pointer;
+  vertical-align: middle;
+}
+.cm-heading-fold-pill:hover {
+  color: var(--accent, #2563eb);
+}
+
+/* 3. 内联 HTML <details><summary> 与 <center> */
+.cm-html-center {
+  text-align: center;
+}
+.cm-html-details {
+  margin: 0.6em 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 6px;
+  background: var(--surface, rgba(128, 128, 128, 0.04));
+}
+.cm-html-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: disclosure-closed inside;
+}
+.cm-html-details[open] > .cm-html-summary {
+  list-style: disclosure-open inside;
+  margin-bottom: 6px;
+}
+.cm-html-details-edit {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted, #888);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cm-html-details:hover .cm-html-details-edit {
+  opacity: 1;
+}
+.cm-html-details-edit:hover {
+  color: var(--accent, #2563eb);
+  border-color: var(--accent, #2563eb);
+}
+.cm-html-details-body p {
+  margin: 0.35em 0;
+  white-space: pre-wrap;
+}
+.cm-html-details-empty {
+  color: var(--muted, #888);
+  font-style: italic;
+}
+
+/* 4. 大纲过滤搜索框 */
+.outline-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 6px 8px 8px;
+}
+.outline-filter-icon {
+  position: absolute;
+  left: 8px;
+  color: var(--muted, #888);
+  pointer-events: none;
+}
+.outline-filter-input {
+  width: 100%;
+  height: 26px;
+  padding: 0 24px 0 26px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 5px;
+  background: var(--bg, transparent);
+  color: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.outline-filter-input:focus {
+  border-color: var(--accent, #2563eb);
+}
+.outline-filter-clear {
+  position: absolute;
+  right: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  background: transparent;
+  color: var(--muted, #888);
+  cursor: pointer;
+}
+
+/* 5. 侧边栏跨文件替换行与搜索命中上下文 */
+.file-replace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px 6px;
+}
+.file-replace-row input {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 5px;
+  background: var(--bg, transparent);
+  color: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.file-replace-row input:focus {
+  border-color: var(--accent, #2563eb);
+}
+.fs-replace-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+  border-radius: 5px;
+  background: var(--surface, transparent);
+  color: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.fs-replace-btn:hover:not(:disabled) {
+  border-color: var(--accent, #2563eb);
+  color: var(--accent, #2563eb);
+}
+.fs-replace-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.file-replace-msg {
+  margin: 0 10px 6px;
+  font-size: 11px;
+  color: var(--accent, #2563eb);
+}
+.ft-row.ft-hit {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  height: auto;
+  padding-top: 5px;
+  padding-bottom: 5px;
+}
+.ft-hit-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.ft-hit-snippet {
+  padding-left: 20px;
+  font-size: 11px;
+  color: var(--muted, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* 6. 单篇字数目标与底栏迷你进度条 */
+#st-count.has-goal {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.st-goal-bar {
+  display: inline-block;
+  width: 42px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border, rgba(128, 128, 128, 0.28));
+  overflow: hidden;
+  vertical-align: middle;
+}
+.st-goal-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent, #2563eb);
+  transition: width 0.2s ease;
+}
+#st-count.is-reached .st-goal-fill,
+.stats-goal-fill.is-reached {
+  background: #16a34a;
+}
+.stats-goal {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border, rgba(128, 128, 128, 0.2));
+}
+.stats-goal-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.stats-goal-row input {
+  width: 84px;
+  height: 24px;
+  padding: 0 6px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.3));
+  border-radius: 4px;
+  background: var(--bg, transparent);
+  color: inherit;
+  font-size: 12px;
+  text-align: right;
+}
+.stats-goal-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--muted, #888);
+  margin-bottom: 5px;
+}
+.stats-goal-track {
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border, rgba(128, 128, 128, 0.22));
+  overflow: hidden;
+}
+.stats-goal-fill {
+  height: 100%;
+  background: var(--accent, #2563eb);
+  transition: width 0.2s ease;
+}
+
+/* 7. 多文档草稿恢复列表面板 */
+.draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  margin: 10px 0 12px;
+}
+.draft-item {
+  padding: 8px 10px;
+  border: 1px solid var(--border, rgba(128, 128, 128, 0.24));
+  border-radius: 6px;
+  background: var(--surface, rgba(128, 128, 128, 0.04));
+}
+.draft-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+.draft-meta {
+  font-size: 11px;
+  color: var(--muted, #888);
+  white-space: nowrap;
+}
+.draft-path {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--muted, #888);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.draft-preview {
+  margin-top: 4px;
+  font-size: 12px;
+  opacity: 0.85;
+  line-height: 1.4;
+}
+.draft-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}

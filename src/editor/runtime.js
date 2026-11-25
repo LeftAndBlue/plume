@@ -15,11 +15,25 @@ import {
 } from "@codemirror/view";
 import { codeSelectionFit } from "./selection-fit.js";
 import { caretFit, dropCursor } from "./caret-fit.js";
-import { quickInsert } from "./quick-insert.js";
+import { createQuickInsert } from "./quick-insert.js";
+import {
+  headingFoldExtension,
+  foldCurrentHeading,
+  unfoldCurrentHeading,
+  foldAllHeadings,
+  unfoldAllHeadings,
+} from "./heading-fold.js";
+import {
+  loadDraftList,
+  upsertDraftEntry,
+  removeDraftEntry,
+  clearAllDraftEntries,
+  draftPreviewText,
+} from "./draft-recovery.js";
 import { createContextMenu } from "./context-menu.js";
 import { createImageOps } from "./image-ops.js";
 import { createSettingsModal } from "./settings-modal.js";
-import { countParagraphs, panguSpacing, resolveImageFolder } from "./typora-extras.js";
+import { computeWordGoalProgress, countParagraphs, panguSpacing, resolveImageFolder } from "./extrasText.js";
 import {
   defaultKeymap,
   history,
@@ -88,6 +102,7 @@ import { t, setLocale, LOCALES, i18n } from "../i18n.js";
 import { withTrailingBlank, detectDocFormat, serializeForDisk } from "./doc-format.js";
 import {
   DRAFT_KEY,
+  WORD_GOAL_KEY,
   SIDE_KEY,
   SIDE_OPEN_KEY,
   SIDEBAR_WIDTH_KEY,
@@ -356,7 +371,12 @@ const view = new EditorView({
       caretFit,
       // 代码块里的多行选区只铺在代码文字上，不盖行号和行尾空白。
       codeSelectionFit,
-      quickInsert,
+      createQuickInsert({
+        onCommand: (cmd) => {
+          if (cmd === "insert-table") pickTableSize();
+        },
+      }),
+      headingFoldExtension(),
       autoPair,
       /**
        * 粘贴必须在 CM 自带的 paste 处理器之前接管。
@@ -523,6 +543,7 @@ const view = new EditorView({
         { key: "Mod-0", run: () => (setHeading(0), true) },
         { key: "Mod-Shift-1", run: () => (showSide("outline"), true) },
         { key: "Mod-Shift-e", run: () => (showSide("files"), true) },
+        { key: "Mod-Shift-f", run: () => (focusFileSearch(), true) },
         { key: "Mod-n", run: () => (newDoc(), true) },
         { key: "Mod-Shift-s", run: () => (saveAs(), true) },
         { key: "Mod-p", run: () => (doExportPdf(), true) },
@@ -717,6 +738,39 @@ function placeFmtPop() {
   pop.style.top = Math.round(y) + "px";
 }
 
+function wordGoalKeyFor(path) {
+  return path ? String(path).replace(/\\/g, "/").toLowerCase() : "__untitled__";
+}
+
+function readWordGoals() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(WORD_GOAL_KEY) || "{}");
+    return raw && typeof raw === "object" ? raw : {};
+  } catch {
+    return {};
+  }
+}
+
+function getWordGoal(path = state.path) {
+  const map = readWordGoals();
+  const n = Number(map[wordGoalKeyFor(path)] || 0);
+  return Number.isFinite(n) && n > 0 ? Math.round(n) : 0;
+}
+
+function setWordGoalForDoc(goal, path = state.path) {
+  const n = Math.max(0, Math.round(Number(goal) || 0));
+  const map = readWordGoals();
+  const k = wordGoalKeyFor(path);
+  if (n > 0) map[k] = n;
+  else delete map[k];
+  try {
+    localStorage.setItem(WORD_GOAL_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
+  shell.setWordGoal(n);
+}
+
 function renderStatsPop() {
   const text = view.state.doc.toString();
   const chars = text.length;
@@ -728,6 +782,14 @@ function renderStatsPop() {
   const row = (label, value) =>
     `<div class="stats-row"><span>${label}</span><b>${value}</b></div>`;
   const paras = countParagraphs(text);
+  const goal = getWordGoal(state.path);
+  shell.setWordGoal(goal);
+  const gp = computeWordGoalProgress(words, goal);
+  const goalStatus = gp.goal
+    ? gp.reached
+      ? `已达成（${gp.percent}%）`
+      : `${gp.percent}% · 还差 ${gp.remaining.toLocaleString()} 字`
+    : "未设置";
   pop.innerHTML =
     "<h4>文档统计</h4>" +
     row("字数", words.toLocaleString()) +
@@ -735,7 +797,27 @@ function renderStatsPop() {
     row("字符（不含空格）", noWs.toLocaleString()) +
     row("段落", paras.toLocaleString()) +
     row("行数", lines.toLocaleString()) +
-    row("阅读时间", mins ? `约 ${mins} 分钟` : "不到 1 分钟");
+    row("阅读时间", mins ? `约 ${mins} 分钟` : "不到 1 分钟") +
+    `<div class="stats-goal">` +
+    `<label class="stats-goal-row"><span>单篇字数目标</span>` +
+    `<input id="stats-goal-input" type="number" min="0" step="100" value="${gp.goal || ""}" placeholder="如 2000"></label>` +
+    `<div class="stats-goal-meta"><span>进度</span><b>${goalStatus}</b></div>` +
+    `<div class="stats-goal-track"><div class="stats-goal-fill${gp.reached ? " is-reached" : ""}" style="width:${gp.percent}%"></div></div>` +
+    `</div>`;
+  const input = pop.querySelector("#stats-goal-input");
+  if (input) {
+    input.addEventListener("change", () => {
+      setWordGoalForDoc(input.value, state.path);
+      renderStatsPop();
+    });
+    input.addEventListener("keydown", (ev) => {
+      ev.stopPropagation();
+      if (ev.key === "Enter") {
+        setWordGoalForDoc(input.value, state.path);
+        renderStatsPop();
+      }
+    });
+  }
 }
 
 document.getElementById("st-count")?.addEventListener("click", (e) => {
@@ -784,26 +866,26 @@ function clearDraft() {
   } catch {
     /* 存储不可用时，内存编辑不受影响 */
   }
+  removeDraftEntry(state.path);
 }
 
 function writeDraft() {
   clearTimeout(draftTimer);
   if (!state.dirty) return;
+  const snapshot = {
+    path: state.path,
+    content: view.state.doc.toString(),
+    eol: state.eol,
+    bom: state.bom,
+    encoding: state.encoding,
+    updatedAt: Date.now(),
+  };
   try {
-    localStorage.setItem(
-      DRAFT_KEY,
-      JSON.stringify({
-        path: state.path,
-        content: view.state.doc.toString(),
-        eol: state.eol,
-        bom: state.bom,
-        encoding: state.encoding,
-        updatedAt: Date.now(),
-      }),
-    );
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(snapshot));
   } catch {
     /* 配额不足或隐私模式下退化为普通未保存提示 */
   }
+  upsertDraftEntry(snapshot);
 }
 
 function scheduleDraft() {
@@ -851,30 +933,109 @@ async function settleCurrentDocument() {
   }
 }
 
-async function offerDraftRecovery() {
-  let draft = null;
-  try {
-    draft = JSON.parse(STARTUP_DRAFT || "null");
-  } catch {
-    clearDraft();
-    return;
-  }
+function restoreDraftItem(draft) {
   if (!draft || typeof draft.content !== "string") return;
-  const restore = window.studio?.confirm
-    ? await window.studio.confirm("检测到上次未保存的草稿，是否恢复？")
-    : window.confirm("检测到上次未保存的草稿，是否恢复？");
-  if (!restore) {
-    clearDraft();
-    return;
-  }
   loadDoc(draft.content, typeof draft.path === "string" ? draft.path : null);
-  // 草稿正文是 LF 快照，恢复时沿用崩溃前记录的换行风格、BOM 与编码。
   if (draft.eol === "\r\n" || draft.eol === "\n") state.eol = draft.eol;
   if (typeof draft.bom === "boolean") state.bom = draft.bom;
   if (typeof draft.encoding === "string" && draft.encoding) state.encoding = draft.encoding;
   setDirty(true);
   writeDraft();
-  flash("已恢复未保存草稿");
+  flash(`已恢复未保存草稿：${draft.name || "未命名.md"}`);
+}
+
+function escHtml(str) {
+  return String(str ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function openDraftRecoveryModal() {
+  const list = loadDraftList();
+  if (!list.length) {
+    openSheet(
+      "未保存草稿恢复",
+      `<p class="settings-note">当前没有可恢复的未保存草稿。</p>` +
+        `<div class="settings-actions"><button type="button" id="draft-close" class="settings-btn">关闭</button></div>`,
+    );
+    document.getElementById("draft-close")?.addEventListener("click", closeSettings);
+    return;
+  }
+  const rows = list
+    .map((d, idx) => {
+      const timeStr = new Date(d.updatedAt).toLocaleString();
+      const words = countWords(d.content).toLocaleString();
+      return (
+        `<div class="draft-item" data-idx="${idx}">` +
+        `<div class="draft-head"><b>${escHtml(d.name)}</b><span class="draft-meta">${words} 字 · ${escHtml(timeStr)}</span></div>` +
+        (d.path ? `<div class="draft-path" title="${escHtml(d.path)}">${escHtml(d.path)}</div>` : "") +
+        `<div class="draft-preview">${escHtml(draftPreviewText(d.content))}</div>` +
+        `<div class="draft-actions">` +
+        `<button type="button" class="settings-btn draft-restore" data-idx="${idx}">恢复此草稿</button>` +
+        `<button type="button" class="settings-btn draft-delete" data-idx="${idx}">删除</button>` +
+        `</div></div>`
+      );
+    })
+    .join("");
+  openSheet(
+    `未保存草稿恢复（${list.length}）`,
+    `<p class="settings-note">按文档自动保留最近未保存快照，可随时选择恢复或清理。</p>` +
+      `<div class="draft-list">${rows}</div>` +
+      `<div class="settings-actions">` +
+      `<button type="button" id="draft-clear-all" class="settings-btn">清空全部草稿</button>` +
+      `<button type="button" id="draft-close" class="settings-btn">关闭</button>` +
+      `</div>`,
+  );
+  const body = document.getElementById("settings-body");
+  body?.querySelectorAll(".draft-restore").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const item = list[Number(btn.dataset.idx)];
+      closeSettings();
+      if (item) restoreDraftItem(item);
+    });
+  });
+  body?.querySelectorAll(".draft-delete").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const item = list[Number(btn.dataset.idx)];
+      if (item) removeDraftEntry(item.id);
+      openDraftRecoveryModal();
+    });
+  });
+  document.getElementById("draft-clear-all")?.addEventListener("click", () => {
+    clearAllDraftEntries();
+    closeSettings();
+    flash("已清空所有未保存草稿");
+  });
+  document.getElementById("draft-close")?.addEventListener("click", closeSettings);
+}
+
+async function offerDraftRecovery() {
+  const list = loadDraftList();
+  if (list.length > 1) {
+    openDraftRecoveryModal();
+    return;
+  }
+  let draft = list[0] || null;
+  if (!draft && STARTUP_DRAFT) {
+    try {
+      draft = JSON.parse(STARTUP_DRAFT);
+    } catch {
+      clearDraft();
+      return;
+    }
+  }
+  if (!draft || typeof draft.content !== "string") return;
+  const restore = window.studio?.confirm
+    ? await window.studio.confirm(`检测到上次未保存的草稿（${draft.name || "未命名.md"}），是否恢复？`)
+    : window.confirm(`检测到上次未保存的草稿（${draft.name || "未命名.md"}），是否恢复？`);
+  if (!restore) {
+    removeDraftEntry(draft.id || draft.path);
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      /* ignore */
+    }
+    return;
+  }
+  restoreDraftItem(draft);
 }
 
 window.addEventListener("beforeunload", () => {
@@ -2590,6 +2751,7 @@ function snapshotDocumentTab(oldPath = state.path) {
 function loadDoc(content, pathOrName, { keepHistory = false } = {}) {
   // UTF-8 BOM 是编码签名，不应参与 Markdown 解析；否则首个标题和 YAML 文首信息会失效。
   Object.assign(state, detectDocFormat(content));
+  shell.setWordGoal(getWordGoal(typeof pathOrName === "string" ? pathOrName : null));
   // 编码标记随载入重置；从磁盘打开时由 openDiskDoc 按读取结果回填。
   state.encoding = "utf-8";
   const text = withTrailingBlank(normalizeMarkdownText(content));
@@ -3009,6 +3171,14 @@ const commands = {
     openSearchPanel(view);
     view.focus();
   },
+  "search-files": () => focusFileSearch(),
+  "draft-recovery": () => openDraftRecoveryModal(),
+  "fold-heading": () => {
+    if (!foldCurrentHeading(view)) flash("当前位置不在可折叠的 H1–H3 章节内");
+  },
+  "unfold-heading": () => unfoldCurrentHeading(view),
+  "fold-all-headings": () => foldAllHeadings(view),
+  "unfold-all-headings": () => unfoldAllHeadings(view),
   "view-files": () => showSide("files"),
   "view-outline": () => showSide("outline"),
   "toggle-sidebar": () => setSidebar(!sidebarVisible()),
@@ -3463,6 +3633,7 @@ const MENUS = [
         { type: "sep" },
         { label: t("menu.save"), cmd: "save", accel: ACCEL.save },
         { label: t("menu.saveAs"), cmd: "save-as", accel: ACCEL["save-as"] },
+        { label: "恢复未保存草稿…", cmd: "draft-recovery" },
         { type: "sep" },
         {
           label: t("menu.export"),
@@ -3500,6 +3671,12 @@ const MENUS = [
         accel: ACCEL["view-outline"],
         checked: () => sidebarVisible() && sideView() === "outline",
       },
+      { type: "sep" },
+      { label: "跨文件搜索与替换", cmd: "search-files", accel: ACCEL["search-files"] },
+      { label: "折叠当前章节", cmd: "fold-heading", accel: ACCEL["fold-heading"] },
+      { label: "展开当前章节", cmd: "unfold-heading", accel: ACCEL["unfold-heading"] },
+      { label: "折叠全部标题章节", cmd: "fold-all-headings" },
+      { label: "展开全部标题章节", cmd: "unfold-all-headings" },
       {
         label: t("menu.showSidebar"),
         cmd: "toggle-sidebar",
@@ -3895,9 +4072,39 @@ if (isTauri && !import.meta.env.DEV) {
   setTimeout(() => updater.checkForUpdate({ silent: true }), 8000);
 }
 
+function focusFileSearch() {
+  setSidebar(true);
+  setSideView("files");
+  requestAnimationFrame(() => {
+    const input = document.getElementById("file-search-input");
+    if (input) {
+      input.focus();
+      input.select();
+    }
+  });
+}
+
+async function reloadModifiedFiles(paths) {
+  if (!Array.isArray(paths) || !paths.length || !state.path || !window.studio?.readFile) return;
+  const curNorm = String(state.path).replace(/\\/g, "/").toLowerCase();
+  const hit = paths.some((p) => String(p).replace(/\\/g, "/").toLowerCase() === curNorm);
+  if (hit && !state.dirty) {
+    try {
+      const doc = await window.studio.readFile(state.path);
+      if (doc && typeof doc.content === "string") {
+        loadDoc(doc.content, state.path, { keepHistory: true });
+        setDirty(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 return {
   run,
   openPath: openTreePath,
+  reloadModifiedFiles,
   openSearchHit: openSearchedFile,
   openTab,
   closeTab,

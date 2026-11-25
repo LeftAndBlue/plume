@@ -35,6 +35,7 @@ const zhCN = {
   "status.retrySave": "点击重试保存",
   "status.countTitle": "字数与阅读时间",
   "status.words": "{n} 字",
+  "status.wordsGoal": "{n} / {g} 字 ({p}%)",
   "status.lines": "{n} 行",
 
   "side.files": "文件",
@@ -51,6 +52,12 @@ const zhCN = {
   "side.regex": "正则表达式",
   "side.wholeWordBadge": "全词",
   "side.resize": "拖动调整侧栏宽度",
+  "side.toggleReplace": "展开 / 收起跨文件替换",
+  "side.replacePlaceholder": "替换为…",
+  "side.replaceAll": "全部替换",
+  "side.replaceConfirm": "确定在当前目录的 {files} 个文件中将「{q}」全部替换为「{r}」吗？此操作将直接写盘。",
+  "side.replaceDone": "已替换 {n} 处（共 {files} 个文件）",
+  "side.replaceNone": "没有可替换的匹配项",
 
   "tree.notFound": "没有找到「{q}」。",
   "tree.truncated": "已达 200 条上限，可能还有更多结果，请细化关键词。",
@@ -66,6 +73,10 @@ const zhCN = {
   "outline.empty": "当前文档没有标题",
   "outline.expand": "展开子标题",
   "outline.collapse": "折叠子标题",
+  "outline.filterPlaceholder": "过滤大纲标题…",
+  "outline.filterAria": "过滤大纲标题",
+  "outline.clearFilter": "清空过滤",
+  "outline.noMatch": "没有匹配的标题",
 
   "fmt.bold": "加粗",
   "fmt.italic": "斜体",
@@ -257,6 +268,7 @@ const en = {
   "status.retrySave": "Click to retry saving",
   "status.countTitle": "Word count and reading time",
   "status.words": "{n} words",
+  "status.wordsGoal": "{n} / {g} words ({p}%)",
   "status.lines": "{n} lines",
 
   "side.files": "Files",
@@ -270,6 +282,12 @@ const en = {
   "side.optsAria": "Search options",
   "side.matchCase": "Match case",
   "side.wholeWord": "Whole word",
+  "side.toggleReplace": "Toggle replace in files",
+  "side.replacePlaceholder": "Replace with…",
+  "side.replaceAll": "Replace All",
+  "side.replaceConfirm": "Replace all occurrences of \"{q}\" with \"{r}\" across {files} file(s)? Changes are written directly to disk.",
+  "side.replaceDone": "Replaced {n} match(es) in {files} file(s)",
+  "side.replaceNone": "No matches to replace",
   "side.regex": "Regular expression",
   "side.wholeWordBadge": "ab",
   "side.resize": "Drag to resize the sidebar",
@@ -286,6 +304,10 @@ const en = {
   "tree.emptyDir": "Empty folder",
 
   "outline.empty": "No headings in this document",
+  "outline.filterPlaceholder": "Filter headings…",
+  "outline.filterAria": "Filter outline headings",
+  "outline.clearFilter": "Clear filter",
+  "outline.noMatch": "No matching headings",
   "outline.expand": "Expand subheadings",
   "outline.collapse": "Collapse subheadings",
 

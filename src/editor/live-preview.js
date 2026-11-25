@@ -3,6 +3,7 @@ import { StateEffect, StateField } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { buildOutline } from './outline.js';
 import { getCodeFences, isFenceDraft } from './code-fences.js';
+import { scanDetailsBlocks, scanStyledInlineHtml } from './extrasText.js';
 import {
   footnoteDef,
   imageBraceAfter,
@@ -13,6 +14,7 @@ import {
 } from './rich-doc.js';
 import { FootnoteDefWidget, FootnoteRefWidget, FrontMatterWidget, MermaidWidget } from './rich-widgets.js';
 import {
+  DetailsWidget,
   FenceChipWidget,
   FenceLangWidget,
   HrWidget,
@@ -431,6 +433,28 @@ function computeBlockDecos(state) {
       }
     }
     i++;
+  }
+  // <details><summary> 折叠块实时预览（块级替换必须落在 StateField blockDecorations 中）
+  const docStr = doc.toString();
+  if (docStr.includes('<details')) {
+    for (const blk of scanDetailsBlocks(docStr)) {
+      if (blk.to <= blk.from || blk.to > doc.length) continue;
+      const startNo = doc.lineAt(blk.from).number;
+      const endNo = doc.lineAt(blk.to).number;
+      let touched = false;
+      for (let ln = startNo; ln <= endNo; ln++) {
+        sensitive.add(ln);
+        if (active.has(ln)) touched = true;
+      }
+      if (!touched) {
+        out.push(
+          Decoration.replace({
+            block: true,
+            widget: new DetailsWidget(blk.summary, blk.body, blk.open, blk.from, blk.to),
+          }).range(blk.from, blk.to)
+        );
+      }
+    }
   }
   return Decoration.set(out, true);
 }
@@ -1009,7 +1033,7 @@ function buildInline(view) {
         if (task[2] !== ' ') addLine(line.number, 'cm-task-done');
       }
 
-      // 常见无属性行内 HTML：只加表现层装饰，标签本身不进入 DOM，也不执行任何 HTML。
+      // 常见无属性行内 HTML + 白名单样式 <center>/<span style>：只加表现层装饰，绝不执行任意 HTML。
       if (!inFence && !tableLine && text.includes('<')) {
         for (const html of scanInlineHtml(text)) {
           const hFrom = line.from + html.from;
@@ -1019,6 +1043,24 @@ function buildInline(view) {
           if (!cursorTouches(hFrom, hTo)) {
             hide(line.from + html.openFrom, line.from + html.openTo);
             hide(line.from + html.closeFrom, line.from + html.closeTo);
+          }
+        }
+        for (const sh of scanStyledInlineHtml(text)) {
+          const hFrom = line.from + sh.from;
+          const hTo = line.from + sh.to;
+          if (inCode(hFrom) || syntaxTree(state).resolveInner(hFrom, 1).name === 'Image') continue;
+          if (sh.tag === 'center') {
+            addLine(line.number, 'cm-html-center');
+          } else if (sh.tag === 'span' && sh.style) {
+            const cFrom = line.from + sh.contentFrom;
+            const cTo = line.from + sh.contentTo;
+            if (cTo > cFrom) {
+              deco.push(Decoration.mark({ attributes: { style: sh.style } }).range(cFrom, cTo));
+            }
+          }
+          if (!cursorTouches(hFrom, hTo)) {
+            hide(line.from + sh.openFrom, line.from + sh.openTo);
+            hide(line.from + sh.closeFrom, line.from + sh.closeTo);
           }
         }
       }

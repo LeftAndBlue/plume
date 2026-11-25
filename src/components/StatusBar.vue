@@ -1,10 +1,14 @@
 <script setup>
+import { computed } from 'vue';
 import { Code, PanelLeft, PanelTop } from 'lucide-vue-next';
 import { useShellStore } from '../stores/shell.js';
+import { computeWordGoalProgress } from '../editor/extrasText.js';
 import { t } from '../i18n.js';
 
 const shell = useShellStore();
 const run = (cmd) => shell.runtime?.run(cmd);
+
+const goalInfo = computed(() => computeWordGoalProgress(shell.words, shell.wordGoal));
 </script>
 
 <template>
@@ -52,7 +56,13 @@ const run = (cmd) => shell.runtime?.run(cmd);
     >
       {{ t('status.saveError') }}
     </button>
-    <span id="st-count" :title="t('status.countTitle')">{{ t('status.words', { n: shell.words.toLocaleString() }) }}</span>
+    <span id="st-count" :class="{ 'has-goal': goalInfo.goal > 0, 'is-reached': goalInfo.reached }" :title="t('status.countTitle')">
+      <template v-if="goalInfo.goal > 0">
+        {{ t('status.wordsGoal', { n: shell.words.toLocaleString(), g: goalInfo.goal.toLocaleString(), p: goalInfo.percent }) }}
+        <span class="st-goal-bar" aria-hidden="true"><span class="st-goal-fill" :style="{ width: goalInfo.percent + '%' }"></span></span>
+      </template>
+      <template v-else>{{ t('status.words', { n: shell.words.toLocaleString() }) }}</template>
+    </span>
     <span id="st-lines">{{ t('status.lines', { n: shell.lines.toLocaleString() }) }}</span>
     <span id="st-hint" :class="{ 'is-flash': !!shell.hint }">{{ shell.hint }}</span>
   </footer>

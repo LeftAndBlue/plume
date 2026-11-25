@@ -109,21 +109,24 @@ provide('fileTree', {
 
 <template>
   <div id="file-tree" class="sb-panel" role="tabpanel">
-    <!-- 跨文件搜索结果 -->
+    <!-- 跨文件搜索结果（含命中行上下文预览） -->
     <template v-if="query">
       <p v-if="error" class="ft-empty ft-search-error">{{ error }}</p>
       <p v-else-if="!hits.length" class="ft-empty">{{ t('tree.notFound', { q: query }) }}</p>
       <button
         v-for="hit in hits"
         :key="hit.path + ':' + hit.line + ':' + hit.col"
-        class="ft-row"
+        class="ft-row ft-hit"
         data-dir="0"
         :title="hit.path + (hit.text ? '\n' + hit.text : '')"
         @click="shell.runtime?.openSearchHit(hit)"
       >
-        <span class="ft-icon"><FileText :size="14" :stroke-width="1.8" /></span>
-        <span class="ft-name">{{ stripMdExt(hit.name) }}</span>
-        <span v-if="hit.text" class="ft-time">{{ hit.line ? t('tree.lineNo', { n: hit.line }) : t('tree.fileName') }}</span>
+        <div class="ft-hit-head">
+          <span class="ft-icon"><FileText :size="14" :stroke-width="1.8" /></span>
+          <span class="ft-name">{{ stripMdExt(hit.name) }}</span>
+          <span class="ft-time">{{ hit.line ? t('tree.lineNo', { n: hit.line }) : t('tree.fileName') }}</span>
+        </div>
+        <div v-if="hit.text" class="ft-hit-snippet">{{ hit.text }}</div>
       </button>
       <p v-if="truncated" class="ft-empty">{{ t('tree.truncated') }}</p>
     </template>

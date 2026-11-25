@@ -15,6 +15,7 @@ import { LOCALES, i18n, setLocale, t } from '../i18n.js';
 export function createSettingsModal({ state, flash, getImageOps, exportSettings, importSettings }) {
   const DEFAULT_PICGO_URL = 'http://127.0.0.1:36677';
   const currentImageFolder = () => getImageOps().currentImageFolder();
+  const rawImageFolderTemplate = () => getImageOps().rawImageFolderTemplate?.() || currentImageFolder();
   const imageUploadMode = () => getImageOps().imageUploadMode();
   const imageUploadProvider = () => getImageOps().imageUploadProvider();
   const picgoUrl = () => getImageOps().picgoUrl();
@@ -151,8 +152,8 @@ async function openSettings() {
       `<div id="spell-list"><p class="settings-note">${t("settings.spellLoading")}</p></div>` +
       `<p class="settings-note">${t("settings.spellNote")}</p>` +
       `<p class="settings-group">${t("settings.images")}</p>` +
-      field(t("settings.imageFolder"), `<input data-k="imageFolder" type="text" value="${currentImageFolder().replace(/"/g, "&quot;")}" placeholder="${t("settings.imageFolderPh")}">`) +
-      `<p class="settings-note">${t("settings.imageNote")}</p>` +
+      field(t("settings.imageFolder"), `<input data-k="imageFolder" type="text" value="${rawImageFolderTemplate().replace(/"/g, "&quot;")}" placeholder="${t("settings.imageFolderPh")}">`) +
+      `<p class="settings-note">${t("settings.imageNote")} <span id="settings-image-folder-preview" class="settings-preview">→ ${currentImageFolder().replace(/</g, "&lt;")}/</span></p>` +
       `<button type="button" id="settings-collect-images" class="settings-btn">${t("settings.collectImages")}</button>` +
       `<div class="settings-actions"><button type="button" id="settings-image-host" class="settings-btn">${t("settings.openImageHost")}</button></div>` +
       `<p></p>` +
@@ -166,10 +167,12 @@ async function openSettings() {
     const key = el.dataset.k;
     if (key === "imageFolder") {
       try {
-        localStorage.setItem(IMAGE_FOLDER_KEY, el.value.trim() || "assets");
+        localStorage.setItem(IMAGE_FOLDER_KEY, el.value.trim() || "${filename}.assets");
       } catch {
         /* 记住目录是增强项，存储不可用时不影响插图 */
       }
+      const pv = document.getElementById("settings-image-folder-preview");
+      if (pv) pv.textContent = "→ " + currentImageFolder() + "/";
       return;
     }
     if (el.type === "checkbox" && key === "pageFull") {

@@ -54,6 +54,7 @@ function createStudio() {
 
     listDir: (d) => invoke('fs_list', { d }),
     searchFiles: (dir, query, opts) => invoke('fs_search', { dir, query, opts }),
+    replaceInFiles: (dir, query, replacement, opts) => invoke('fs_replace', { dir, query, replacement, opts }),
     createFsEntry: (root, dir, name, directory) => invoke('fs_create', { root, dir, name, directory }),
     renameFsEntry: (root, source, name) => invoke('fs_rename', { root, source, name }),
     trashFsEntry: (root, source) => invoke('fs_trash', { root, source }),

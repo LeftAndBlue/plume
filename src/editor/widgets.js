@@ -2,6 +2,7 @@ import { EditorView, WidgetType } from '@codemirror/view';
 import { StateEffect, StateField } from '@codemirror/state';
 import { cancelCellEditor, editTable, openCellEditor, tableCursorAt } from './table-edit.js';
 import { renderInline, renderTex, isTexReady } from './inline-text.js';
+import { updateImageWidthAttr } from './extrasText.js';
 import { openLangMenu } from './lang-menu.js';
 import { setAlign, setTableColumnWidth } from './table-model.js';
 import {
@@ -260,16 +261,65 @@ export class ImageWidget extends WidgetType {
     img.draggable = false;
     if (this.width) img.style.width = /^\d+(\.\d+)?$/.test(this.width) ? this.width + 'px' : this.width;
     if (this.align) wrap.classList.add('is-' + this.align);
+    const handle = document.createElement('span');
+    handle.className = 'cm-image-resize';
+    handle.title = '拖动调整图片宽度';
+    const sizeTip = document.createElement('span');
+    sizeTip.className = 'cm-image-size-tip';
+    sizeTip.hidden = true;
+
     img.addEventListener('error', () => {
       wrap.classList.add('is-broken');
       img.remove();
+      handle.remove();
+      sizeTip.remove();
       const ph = document.createElement('span');
       ph.className = 'cm-image-broken';
       ph.textContent = '无法加载图片：' + formatImageMd(this.alt, this.src, this.title, this.attrs);
       ph.title = url;
       wrap.appendChild(ph);
     });
+
+    handle.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startW = Math.round(img.getBoundingClientRect().width || img.naturalWidth || 320);
+      let nextW = startW;
+      wrap.classList.add('is-resizing');
+      sizeTip.textContent = `${nextW}px`;
+      sizeTip.hidden = false;
+
+      const onMove = (ev) => {
+        nextW = Math.max(40, Math.min(2400, Math.round(startW + (ev.clientX - startX))));
+        img.style.width = nextW + 'px';
+        sizeTip.textContent = `${nextW}px`;
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        wrap.classList.remove('is-resizing');
+        sizeTip.hidden = true;
+        if (nextW === startW) return;
+        const doc = view.state.doc;
+        if (this.from < 0 || this.to > doc.length) return;
+        const raw = doc.sliceString(this.from, this.to);
+        const updated = updateImageWidthAttr(raw, nextW);
+        if (updated && updated !== raw) {
+          view.dispatch({
+            changes: { from: this.from, to: this.to, insert: updated },
+            userEvent: 'input',
+          });
+        }
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+
     wrap.appendChild(img);
+    wrap.appendChild(handle);
+    wrap.appendChild(sizeTip);
 
     if (showUrl) {
       const input = document.createElement('input');
@@ -364,7 +414,7 @@ export class ImageWidget extends WidgetType {
     }
 
     wrap.addEventListener('mousedown', (e) => {
-      if (e.target.closest && e.target.closest('.cm-image-url')) return;
+      if (e.target.closest && e.target.closest('.cm-image-url, .cm-image-resize')) return;
       if (e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
@@ -993,6 +1043,81 @@ export class FenceLangWidget extends WidgetType {
       openLangMenu(el, this.lang, (lang) => this.setLang(view, lang));
     });
     return el;
+  }
+  ignoreEvent() {
+    return true;
+  }
+}
+
+
+/* ---------------- 内联 HTML <details> 折叠块 ---------------- */
+
+export class DetailsWidget extends WidgetType {
+  constructor(summary, body, open, from, to) {
+    super();
+    this.summary = summary;
+    this.body = body;
+    this.open = !!open;
+    this.from = from;
+    this.to = to;
+  }
+  eq(other) {
+    return (
+      other.summary === this.summary &&
+      other.body === this.body &&
+      other.open === this.open &&
+      other.from === this.from &&
+      other.to === this.to
+    );
+  }
+  toDOM(view) {
+    const details = document.createElement('details');
+    details.className = 'cm-html-details';
+    if (this.open) details.open = true;
+
+    const sum = document.createElement('summary');
+    sum.className = 'cm-html-summary';
+    sum.textContent = this.summary || '详细信息';
+
+    const editBtn = document.createElement('button');
+    editBtn.type = 'button';
+    editBtn.className = 'cm-html-details-edit';
+    editBtn.textContent = '源码';
+    editBtn.title = '编辑 HTML 源码';
+    editBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      view.dispatch({
+        selection: { anchor: this.from },
+        scrollIntoView: true,
+      });
+      view.focus();
+    });
+    sum.appendChild(editBtn);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'cm-html-details-body';
+    const paras = String(this.body || '').split(/\n\s*\n/).filter(Boolean);
+    if (!paras.length) {
+      const p = document.createElement('p');
+      p.textContent = '（空）';
+      p.className = 'cm-html-details-empty';
+      bodyEl.appendChild(p);
+    } else {
+      for (const block of paras) {
+        const p = document.createElement('p');
+        p.textContent = block;
+        bodyEl.appendChild(p);
+      }
+    }
+
+    details.append(sum, bodyEl);
+    details.addEventListener('dblclick', (e) => {
+      if (e.target.closest && e.target.closest('summary')) return;
+      view.dispatch({ selection: { anchor: this.from }, scrollIntoView: true });
+      view.focus();
+    });
+    return details;
   }
   ignoreEvent() {
     return true;

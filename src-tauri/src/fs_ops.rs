@@ -60,6 +60,14 @@ pub struct SearchOutcome {
     pub truncated: bool,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReplaceOutcome {
+    pub files_changed: usize,
+    pub replacements: usize,
+    pub changed_paths: Vec<String>,
+}
+
 fn build_matcher(query: &str, opts: &SearchOpts) -> Result<regex::Regex, AnyErr> {
     let mut pattern = if opts.regex {
         query.to_string()
@@ -366,6 +374,82 @@ pub fn search_files(dir: &str, query: &str, opts: SearchOpts) -> Result<SearchOu
     }
     let truncated = hits.len() >= MAX_HITS_TOTAL;
     Ok(SearchOutcome { hits, truncated })
+}
+
+/// 跨文件批量替换：遍历目录下全部 Markdown/文本文档，保留原编码并原子落盘。
+pub fn replace_in_files(
+    dir: &str,
+    query: &str,
+    replacement: &str,
+    opts: SearchOpts,
+) -> Result<ReplaceOutcome, AnyErr> {
+    if query.is_empty() {
+        return Ok(ReplaceOutcome {
+            files_changed: 0,
+            replacements: 0,
+            changed_paths: vec![],
+        });
+    }
+    let matcher = build_matcher(query, &opts)?;
+    let mut stack = vec![PathBuf::from(dir)];
+    let mut files_changed = 0usize;
+    let mut replacements = 0usize;
+    let mut changed_paths = vec![];
+
+    while let Some(cur) = stack.pop() {
+        let Ok(entries) = fs::read_dir(&cur) else { continue };
+        for ent in entries.flatten() {
+            let path = ent.path();
+            let name = ent.file_name().to_string_lossy().to_string();
+            if name.starts_with('.') {
+                continue;
+            }
+            let Ok(meta) = ent.metadata() else { continue };
+            if meta.is_dir() {
+                if matches!(name.as_str(), "node_modules" | "target" | "dist") {
+                    continue;
+                }
+                stack.push(path);
+                continue;
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.to_ascii_lowercase())
+                .unwrap_or_default();
+            if !DOC_EXTS.contains(&ext.as_str()) || meta.len() > SEARCHABLE_MAX {
+                continue;
+            }
+            let Ok(raw_bytes) = fs::read(&path) else { continue };
+            let (content, encoding) = decode_text(&raw_bytes);
+            let count = matcher.find_iter(&content).count();
+            if count == 0 {
+                continue;
+            }
+            let replaced = if opts.regex {
+                matcher.replace_all(&content, replacement).into_owned()
+            } else {
+                matcher
+                    .replace_all(&content, regex::NoExpand(replacement))
+                    .into_owned()
+            };
+            if replaced == content {
+                continue;
+            }
+            let out_bytes = encode_for_save(&replaced, &encoding)?;
+            let target = pstr(&path);
+            write_bytes_atomic(&target, &out_bytes)?;
+            files_changed += 1;
+            replacements += count;
+            changed_paths.push(target);
+        }
+    }
+
+    Ok(ReplaceOutcome {
+        files_changed,
+        replacements,
+        changed_paths,
+    })
 }
 
 pub fn create_entry(root: &str, dir: &str, name: &str, directory: bool) -> Result<String, AnyErr> {
