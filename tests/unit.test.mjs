@@ -35,6 +35,20 @@ import {
   upsertDraftEntry,
 } from '../src/editor/draft-recovery.js';
 import { DRAFT_KEY } from '../src/editor/storage-keys.js';
+import {
+  codeBlockEnter,
+  continueList,
+  continueQuote,
+  handleShiftTab,
+  handleTab,
+  indentCodeBlock,
+  indentList,
+  normalizeEmptyTaskListInput,
+  outdentLength,
+  outdentSoftTabOnBackspace,
+  softNewline,
+  tabOutOfPair,
+} from '../src/editor/typing-ergonomics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -247,4 +261,299 @@ test('draft-recovery 支持多文档草稿列表、旧单条迁移、删除与�
 
   clearAllDraftEntries(store);
   assert.equal(loadDraftList(store).length, 0);
+});
+
+/* ---------------- 编辑器盲打直觉（Tab / Enter / Space / Backspace） ---------------- */
+
+function makeMockDoc(text) {
+  const rawLines = text.split('\n');
+  const lines = [];
+  let offset = 0;
+  for (let i = 0; i < rawLines.length; i++) {
+    const t = rawLines[i];
+    lines.push({ number: i + 1, from: offset, to: offset + t.length, text: t });
+    offset += t.length + 1;
+  }
+  return {
+    length: text.length,
+    lines: lines.length,
+    toString: () => text,
+    sliceString: (from, to = text.length) => text.slice(Math.max(0, from), Math.max(0, to)),
+    line: (n) => lines[n - 1],
+    lineAt: (pos) => {
+      for (const l of lines) {
+        if (pos >= l.from && pos <= l.to) return l;
+      }
+      return lines[lines.length - 1];
+    },
+  };
+}
+
+function makeMockView(docText, anchor, head = anchor) {
+  let text = docText;
+  let range = {
+    anchor,
+    head,
+    from: Math.min(anchor, head),
+    to: Math.max(anchor, head),
+    empty: anchor === head,
+  };
+  const view = {
+    state: {
+      doc: makeMockDoc(text),
+      selection: { main: range, ranges: [range] },
+    },
+    dispatch(spec) {
+      let changes = [];
+      if (spec.changes) {
+        changes = Array.isArray(spec.changes) ? spec.changes : [spec.changes];
+      }
+      // 按 from 倒序应用变更并映射光标
+      let nextAnchor = range.anchor;
+      let nextHead = range.head;
+      const sorted = [...changes].sort((a, b) => b.from - a.from);
+      for (const ch of sorted) {
+        const from = ch.from;
+        const to = ch.to ?? ch.from;
+        const ins = ch.insert ?? '';
+        const delta = ins.length - (to - from);
+        text = text.slice(0, from) + ins + text.slice(to);
+        if (nextAnchor >= to) nextAnchor += delta;
+        else if (nextAnchor > from) nextAnchor = from + ins.length;
+        if (nextHead >= to) nextHead += delta;
+        else if (nextHead > from) nextHead = from + ins.length;
+      }
+      if (spec.selection) {
+        nextAnchor = spec.selection.anchor;
+        nextHead = spec.selection.head ?? spec.selection.anchor;
+      }
+      range = {
+        anchor: nextAnchor,
+        head: nextHead,
+        from: Math.min(nextAnchor, nextHead),
+        to: Math.max(nextAnchor, nextHead),
+        empty: nextAnchor === nextHead,
+      };
+      view.state = {
+        doc: makeMockDoc(text),
+        selection: { main: range, ranges: [range] },
+      };
+    },
+    get text() {
+      return text;
+    },
+    get pos() {
+      return range.head;
+    },
+  };
+  return view;
+}
+
+test('Tab 在普通正文不插入硬 \\t，在代码块内插入软空格并支持 Shift+Tab 反缩进', () => {
+  // 普通正文行首按 Tab 不应插 \t 触发缩进代码块
+  const vPara = makeMockView('普通段落正文', 0);
+  assert.equal(handleTab(vPara), true);
+  assert.equal(vPara.text, '普通段落正文');
+
+  // 代码块内按 Tab 插入 2 空格，Shift+Tab 反缩进 2 空格
+  const code = '```js\nconst a = 1;\n```';
+  const lineStart = code.indexOf('const');
+  const vCode = makeMockView(code, lineStart);
+  assert.equal(handleTab(vCode), true);
+  assert.equal(vCode.text, '```js\n  const a = 1;\n```');
+  assert.equal(vCode.pos, lineStart + 2);
+
+  assert.equal(handleShiftTab(vCode), true);
+  assert.equal(vCode.text, '```js\nconst a = 1;\n```');
+
+  // 代码块内支持自定义 4 空格缩进与多行批量缩进
+  const multi = '```js\na();\nb();\n```';
+  const vMulti = makeMockView(multi, multi.indexOf('a()'), multi.indexOf('b();') + 4);
+  assert.equal(indentCodeBlock(vMulti, 1, 4), true);
+  assert.equal(vMulti.text, '```js\n    a();\n    b();\n```');
+});
+
+test('引用块内列表支持 Tab / Shift+Tab 调层级且不破坏 > 前缀', () => {
+  const v = makeMockView('> - item', 8);
+  assert.equal(handleTab(v), true);
+  assert.equal(v.text, '>   - item');
+  assert.equal(handleShiftTab(v), true);
+  assert.equal(v.text, '> - item');
+
+  const vNested = makeMockView('> > - item', 10);
+  assert.equal(handleTab(vNested), true);
+  assert.equal(vNested.text, '> >   - item');
+});
+
+test('混用 \\t 与空格的列表 Shift+Tab 只退一级，不一次删过头', () => {
+  assert.equal(outdentLength('\t  ', 2), 1);
+  assert.equal(outdentLength(' \t', 2), 1);
+  assert.equal(outdentLength('    ', 2), 2);
+
+  const v = makeMockView('\t  - item', 9);
+  assert.equal(indentList(v, -1), true);
+  assert.equal(v.text, '  - item');
+  assert.equal(indentList(v, -1), true);
+  assert.equal(v.text, '- item');
+});
+
+test('有序列表 Tab 降级自动重置为 1.，Shift+Tab 升级顺延父级序号并可逆', () => {
+  const doc = '1. 第一项\n2. 第二项\n3. 第三项';
+  const line2Pos = doc.indexOf('第二项');
+  const v = makeMockView(doc, line2Pos);
+
+  assert.equal(indentList(v, 1), true);
+  assert.equal(v.text, '1. 第一项\n  1. 第二项\n2. 第三项');
+
+  // Shift+Tab 升回顶层，自动顺延为 2. 且原 2. 第三项恢复为 3. 第三项
+  assert.equal(indentList(v, -1), true);
+  assert.equal(v.text, '1. 第一项\n2. 第二项\n3. 第三项');
+
+  // 引用内有序列表降级同样自动重置
+  const qDoc = '> 1. A\n> 2. B';
+  const vq = makeMockView(qDoc, qDoc.length);
+  assert.equal(indentList(vq, 1), true);
+  assert.equal(vq.text, '> 1. A\n>   1. B');
+});
+
+test('嵌套空列表与嵌套空引用按 Enter 逐级退层，顶层再按才退出', () => {
+  const vList = makeMockView('    - ', 6);
+  assert.equal(continueList(vList), true);
+  assert.equal(vList.text, '  - ');
+  assert.equal(continueList(vList), true);
+  assert.equal(vList.text, '- ');
+  assert.equal(continueList(vList), true);
+  assert.equal(vList.text, '');
+
+  // 嵌套空有序列表退回父级时顺延父级序号
+  const ordDoc = '1. 第一项\n  1. ';
+  const vOrd = makeMockView(ordDoc, ordDoc.length);
+  assert.equal(continueList(vOrd), true);
+  assert.equal(vOrd.text, '1. 第一项\n2. ');
+
+  // 嵌套空引用逐级退一层
+  const vQuote = makeMockView('> > ', 4);
+  assert.equal(continueQuote(vQuote), true);
+  assert.equal(vQuote.text, '> ');
+  assert.equal(continueQuote(vQuote), true);
+  assert.equal(vQuote.text, '');
+
+  // 引用内嵌套空列表：先退列表缩进 -> 再退列表保留引用 -> 最后退引用
+  const vQList = makeMockView('>   - ', 6);
+  assert.equal(continueQuote(vQList), true);
+  assert.equal(vQList.text, '> - ');
+  assert.equal(continueQuote(vQList), true);
+  assert.equal(vQList.text, '> ');
+  assert.equal(continueQuote(vQList), true);
+  assert.equal(vQList.text, '');
+});
+
+test('选中列表或引用内文字后按 Enter 先删选区再续标记', () => {
+  const listText = '- hello world';
+  const v1 = makeMockView(listText, listText.indexOf('world'), listText.length);
+  assert.equal(continueList(v1), true);
+  assert.equal(v1.text, '- hello \n- ');
+
+  const qText = '> quote tail';
+  const v2 = makeMockView(qText, qText.indexOf('tail'), qText.length);
+  assert.equal(continueQuote(v2), true);
+  assert.equal(v2.text, '> quote \n> ');
+
+  const qlText = '> - item tail';
+  const v3 = makeMockView(qlText, qlText.indexOf('tail'), qlText.length);
+  assert.equal(continueQuote(v3), true);
+  assert.equal(v3.text, '> - item \n> - ');
+});
+
+test('Shift+Enter 在列表、引用与正文中执行软换行并对齐缩进', () => {
+  const vList = makeMockView('- 第一行', 5);
+  assert.equal(softNewline(vList), true);
+  assert.equal(vList.text, '- 第一行\n  ');
+
+  const vOrd = makeMockView('  1. 第一行', 8);
+  assert.equal(softNewline(vOrd), true);
+  assert.equal(vOrd.text, '  1. 第一行\n     ');
+
+  const vQList = makeMockView('> - 第一行', 7);
+  assert.equal(softNewline(vQList), true);
+  assert.equal(vQList.text, '> - 第一行\n>   ');
+
+  const vQuote = makeMockView('> 引用', 4);
+  assert.equal(softNewline(vQuote), true);
+  assert.equal(vQuote.text, '> 引用\n> ');
+
+  const vPara = makeMockView('普通正文', 4);
+  assert.equal(softNewline(vPara), true);
+  assert.equal(vPara.text, '普通正文\n');
+});
+
+test('代码块内 {|} / (|) / [|] 回车自动展开缩进并对齐右括号', () => {
+  const doc = '```js\nif (ok) {}\n```';
+  const pos = doc.indexOf('{}') + 1;
+  const v = makeMockView(doc, pos);
+  assert.equal(codeBlockEnter(v, 2), true);
+  assert.equal(v.text, '```js\nif (ok) {\n  \n}\n```');
+  assert.equal(v.pos, doc.indexOf('{') + 4);
+
+  const doc2 = '```js\n  fn()\n```';
+  const pos2 = doc2.indexOf('()') + 1;
+  const v2 = makeMockView(doc2, pos2);
+  assert.equal(codeBlockEnter(v2, 2), true);
+  assert.equal(v2.text, '```js\n  fn(\n    \n  )\n```');
+});
+
+test('Tab 跳出行内配对闭合符号（**、`、$、)、]）且不误跳开符号', () => {
+  const vBold = makeMockView('**粗体**', 4);
+  assert.equal(tabOutOfPair(vBold), true);
+  assert.equal(vBold.pos, 6);
+
+  const vCode = makeMockView('`code`', 5);
+  assert.equal(tabOutOfPair(vCode), true);
+  assert.equal(vCode.pos, 6);
+
+  const vMath = makeMockView('$x$', 2);
+  assert.equal(tabOutOfPair(vMath), true);
+  assert.equal(vMath.pos, 3);
+
+  const vLink = makeMockView('[text](url)', 5);
+  assert.equal(tabOutOfPair(vLink), true);
+  assert.equal(vLink.pos, 6);
+
+  // 光标在开标记前不应误跳
+  const vOpen = makeMockView('hello **world**', 6);
+  assert.equal(tabOutOfPair(vOpen), false);
+  assert.equal(vOpen.pos, 6);
+});
+
+test('代码块内软缩进纯空白行首 Backspace 按缩进宽度整步回删', () => {
+  const doc = '```js\n    x\n```';
+  const v = makeMockView(doc, doc.indexOf('x'));
+  assert.equal(outdentSoftTabOnBackspace(v, 2), true);
+  assert.equal(v.text, '```js\n  x\n```');
+  assert.equal(outdentSoftTabOnBackspace(v, 2), true);
+  assert.equal(v.text, '```js\nx\n```');
+
+  // 非对齐缩进（3 空格）先对齐到 2 空格
+  const docOdd = '```js\n   x\n```';
+  const vOdd = makeMockView(docOdd, docOdd.indexOf('x'));
+  assert.equal(outdentSoftTabOnBackspace(vOdd, 2), true);
+  assert.equal(vOdd.text, '```js\n  x\n```');
+});
+
+test('任务列表快捷输入容错：- [] 后敲空格自动规范化为 - [ ] ', () => {
+  const v1 = makeMockView('- []', 4);
+  assert.equal(normalizeEmptyTaskListInput(v1, 4, 4, ' '), true);
+  assert.equal(v1.text, '- [ ] ');
+  assert.equal(v1.pos, 6);
+
+  const v2 = makeMockView('>   - []', 8);
+  assert.equal(normalizeEmptyTaskListInput(v2, 8, 8, ' '), true);
+  assert.equal(v2.text, '>   - [ ] ');
+
+  // 代码块内不触发
+  const code = '```md\n- []\n```';
+  const pos = code.indexOf('[]') + 2;
+  const v3 = makeMockView(code, pos);
+  assert.equal(normalizeEmptyTaskListInput(v3, pos, pos, ' '), false);
+  assert.equal(v3.text, code);
 });

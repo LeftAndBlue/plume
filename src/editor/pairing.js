@@ -19,6 +19,7 @@ import { EditorSelection, EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { getCodeFences } from './code-fences.js';
 import { sourceModeField } from './live-preview.js';
+import { normalizeEmptyTaskListInput, outdentLength } from './typing-ergonomics.js';
 
 /** 单字符配对：输入左边自动补右边 */
 const SINGLE = { '(': ')', '[': ']', '{': '}', '`': '`', '"': '"' };
@@ -84,6 +85,9 @@ export function handleInput(view, from, to, text) {
   }
 
   if (code) return false;
+
+  /* 2.5 任务列表快捷输入容错：`- [] ` 自动规范化为 `- [ ] ` */
+  if (normalizeEmptyTaskListInput(view, from, to, text, inBlockCode)) return true;
 
   /* 3. 单字符配对 */
   if (SINGLE[ch]) {
@@ -369,7 +373,7 @@ export function exitListOnBackspace(view) {
     const prefix = matched[1] || '';
     const indent = matched[2];
     if (indent.length > 0) {
-      const removeLen = indent.endsWith('\t') ? 1 : Math.min(indent.length, 2);
+      const removeLen = outdentLength(indent, 2);
       const indentFrom = line.from + prefix.length;
       changes.push({ from: indentFrom, to: indentFrom + removeLen, insert: '' });
     } else {

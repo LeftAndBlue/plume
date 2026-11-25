@@ -38,7 +38,6 @@ import {
   defaultKeymap,
   history,
   historyKeymap,
-  indentWithTab,
   redo,
   undo,
 } from "@codemirror/commands";
@@ -48,6 +47,7 @@ import { codeLanguages } from "./code-languages.js";
 import {
   HighlightStyle,
   indentOnInput,
+  indentUnit,
   syntaxHighlighting,
   syntaxTree,
 } from "@codemirror/language";
@@ -86,6 +86,16 @@ import {
   protectFenceDelete,
   selectCodeBlock,
 } from "./pairing.js";
+import {
+  DEFAULT_INDENT_WIDTH,
+  codeBlockEnter,
+  continueList,
+  continueQuote,
+  handleShiftTab,
+  handleTab,
+  outdentSoftTabOnBackspace,
+  softNewline,
+} from "./typing-ergonomics.js";
 import { detectCode, pasteAsCodeBlock } from "./paste-code.js";
 import { renderSelectionForClipboard } from "./clipboard.js";
 import { createMenubar } from "./menubar.js";
@@ -453,6 +463,8 @@ const view = new EditorView({
       // 按住 Alt 拖动能按列选出多行；Ctrl+点击再加一支光标
       rectangularSelection(),
       EditorState.allowMultipleSelections.of(true),
+      EditorState.tabSize.of(DEFAULT_INDENT_WIDTH),
+      indentUnit.of(" ".repeat(DEFAULT_INDENT_WIDTH)),
       indentOnInput(),
       /**
        * 结构键（回车续标记、Tab 调列表层级）必须排在 markdown() 之前。
@@ -467,11 +479,13 @@ const view = new EditorView({
           { key: "Mod-a", run: selectCodeBlock },
           { key: "Mod-Shift-c", run: (v) => { copyMarkdownSelection(v); return true; } },
           { key: "Enter", run: fenceOnEnter },
-          { key: "Enter", run: continueList },
-          { key: "Enter", run: continueQuote },
+          { key: "Enter", run: (v) => codeBlockEnter(v, DEFAULT_INDENT_WIDTH, inCodeBlock) },
+          { key: "Enter", run: (v) => continueList(v, { tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
+          { key: "Enter", run: (v) => continueQuote(v, { tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
           { key: "Enter", run: newlineAfterLazyQuote },
-          { key: "Tab", run: (v) => indentList(v, 1) },
-          { key: "Shift-Tab", run: (v) => indentList(v, -1) },
+          { key: "Shift-Enter", run: (v) => softNewline(v, { isCodeBlock: inCodeBlock }) },
+          { key: "Tab", run: (v) => handleTab(v, { indentWidth: DEFAULT_INDENT_WIDTH, tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
+          { key: "Shift-Tab", run: (v) => handleShiftTab(v, { indentWidth: DEFAULT_INDENT_WIDTH, tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
           // 跨过零高度的隐藏围栏，不让光标困在代码块首尾。
           { key: "ArrowLeft", run: (v) => navigateFence(v, "left") },
           { key: "ArrowRight", run: (v) => navigateFence(v, "right") },
@@ -495,6 +509,8 @@ const view = new EditorView({
             key: "Delete",
             run: (v) => (isSourceMode() ? false : protectFenceDelete(v)),
           },
+          // 代码块内软缩进纯空白行首：Backspace 按缩进宽度整步回删
+          { key: "Backspace", run: (v) => outdentSoftTabOnBackspace(v, DEFAULT_INDENT_WIDTH, inCodeBlock) },
           // 空配对里按退格删掉一对，别留个孤儿括号；Delete 对称，同样整对删除
           { key: "Backspace", run: deletePair },
           { key: "Delete", run: deletePairForward },
@@ -562,7 +578,6 @@ const view = new EditorView({
         ...defaultKeymap,
         ...searchKeymap,
         ...historyKeymap,
-        indentWithTab,
       ]),
       EditorView.updateListener.of((u) => {
         if (u.docChanged) {
@@ -2283,83 +2298,6 @@ function inCodeBlock(state, pos) {
   return false;
 }
 
-/** 列表行的续行前缀（有序 +1、任务补 [ ]）；不是列表项返回 null */
-function nextListPrefix(lineText) {
-  const m = /^(\s*)([-*+]|\d+[.)])([ \t]+)(\[[ xX]\][ \t]+)?/.exec(lineText);
-  if (!m) return null;
-  let mark = m[2];
-  if (/^\d/.test(mark)) mark = String(parseInt(mark, 10) + 1) + mark.slice(-1);
-  return { m, prefix: m[1] + mark + " " + (m[4] ? "[ ] " : "") };
-}
-
-/**
- * 回车延续列表（Typora 的默认行为）：
- * - 有序列表序号自动 +1，任务列表补回未勾选的 `- [ ] `
- * - 在空的列表项上回车 = 退出列表（把这一行的标记清掉）
- * - 光标还在标记里面、或这一行根本不是列表：返回 false，交回 defaultKeymap
- */
-function continueList(view) {
-  const { state } = view;
-  const sel = state.selection.main;
-  if (!sel.empty) return false;
-  const line = state.doc.lineAt(sel.from);
-  if (inCodeBlock(state, sel.from)) return false;
-  const next = nextListPrefix(line.text);
-  if (!next) return false;
-  const { m, prefix } = next;
-  if (sel.from < line.from + m[0].length) return false;
-
-  // 「空列表项」要看标记之后的正文，不是光标之后的文字——
-  // 拿光标位置切字符串的话，人在行尾敲回车时永远是「空」，整行标记会被当场剥掉。
-  if (!line.text.slice(m[0].length).trim()) {
-    view.dispatch({
-      changes: { from: line.from, to: line.from + m[0].length, insert: "" },
-      selection: { anchor: line.from },
-    });
-    return true;
-  }
-
-  const insert = "\n" + prefix;
-  view.dispatch({
-    changes: { from: sel.from, insert },
-    selection: { anchor: sel.from + insert.length },
-  });
-  return true;
-}
-
-/**
- * 引用块里回车续 `>`（Typora 行为）。
- * `> - x` 这种「引用里套列表」也认：续行时把列表标记一并补上，
- * 否则在引用里列个清单，每敲一次回车都得先手打 `>` 再打 `- `。
- * 空的引用行上回车 = 退出引用。
- */
-function continueQuote(view) {
-  const { state } = view;
-  const sel = state.selection.main;
-  if (!sel.empty) return false;
-  const line = state.doc.lineAt(sel.from);
-  if (inCodeBlock(state, sel.from)) return false;
-  const m = /^([ \t]*(?:>[ \t]?)+)([\s\S]*)$/.exec(line.text);
-  if (!m) return false;
-  if (sel.from < line.from + m[1].length) return false;
-
-  if (!m[2].trim()) {
-    view.dispatch({
-      changes: { from: line.from, to: line.from + m[1].length, insert: "" },
-      selection: { anchor: line.from },
-    });
-    return true;
-  }
-
-  const inner = nextListPrefix(m[2]);
-  const insert = "\n" + m[1] + (inner ? inner.prefix : "");
-  view.dispatch({
-    changes: { from: sel.from, insert },
-    selection: { anchor: sel.from + insert.length },
-  });
-  return true;
-}
-
 /**
  * 引用后面如果没有空行，下一行文字在语法上仍算这段引用，画面上却不带 `>`。
  * 这时回车若交给 markdown 自带的续行，会凭空补出一个 `>`。
@@ -2384,40 +2322,6 @@ function newlineAfterLazyQuote(view) {
     changes: { from: sel.from, insert: "\n" },
     selection: { anchor: sel.from + 1 },
   });
-  return true;
-}
-
-/**
- * Tab / Shift+Tab 调列表层级（Typora 的手感：Tab 降一级，Shift+Tab 回来）。
- * 只对列表行生效 —— 正文里的 Tab、代码块里的缩进仍然交给 indentWithTab。
- * 一次缩进 2 空格，和回车续标记、无序列表「按 2 空格算一层」共用一个标尺，
- * 不然圆的圆点层级会跳。
- */
-function indentList(view, dir) {
-  const { state } = view;
-  const listRe = /^[ \t]*(?:[-*+]|\d+[.)])[ \t]/;
-  const lineNos = [];
-  for (const r of state.selection.ranges) {
-    const a = state.doc.lineAt(r.from).number;
-    const b = state.doc.lineAt(r.to).number;
-    for (let n = a; n <= b; n++) if (!lineNos.includes(n)) lineNos.push(n);
-  }
-
-  const changes = [];
-  for (const n of lineNos) {
-    const line = state.doc.line(n);
-    if (!listRe.test(line.text)) continue;
-    if (inCodeBlock(state, line.from)) continue;
-    if (dir > 0) {
-      changes.push({ from: line.from, insert: "  " });
-    } else {
-      const lead = /^[ \t]*/.exec(line.text)[0];
-      const cut = Math.min(2, lead.length);
-      if (cut) changes.push({ from: line.from, to: line.from + cut });
-    }
-  }
-  if (!changes.length) return false;
-  view.dispatch({ changes });
   return true;
 }
 
