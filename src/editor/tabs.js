@@ -146,13 +146,13 @@ export function createTabsManager({
       if (next && studio?.readFile) {
         try {
           const r = await studio.readFile(next.path);
-          openDiskDoc(r);
+          openDiskDoc(r, { snapshotOld: false });
           return;
         } catch {
           /* 文件已被外部删除时退回空白文档 */
         }
       }
-      loadDoc('', null);
+      loadDoc('', null, { snapshotOld: false });
     } else {
       syncTabs();
     }
@@ -170,7 +170,7 @@ export function createTabsManager({
       if (studio?.readFile) {
         try {
           const r = await studio.readFile(target.path);
-          openDiskDoc(r);
+          openDiskDoc(r, { snapshotOld: false });
           return;
         } catch (err) {
           flash('打开标签失败：' + (err?.message || err));
@@ -193,13 +193,13 @@ export function createTabsManager({
       if (studio?.readFile) {
         try {
           const r = await studio.readFile(documentTabs[idx].path);
-          openDiskDoc(r);
+          openDiskDoc(r, { snapshotOld: false });
           return;
         } catch (err) {
           flash('打开标签失败：' + (err?.message || err));
         }
       }
-      loadDoc('', null);
+      loadDoc('', null, { snapshotOld: false });
       return;
     }
     syncTabs();

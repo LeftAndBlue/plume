@@ -2877,7 +2877,7 @@ const tabs = createTabsManager({
   shell,
   samePath,
   settleCurrentDocument,
-  openDiskDoc: (r) => fileIO.openDiskDoc(r),
+  openDiskDoc: (r, opts) => fileIO.openDiskDoc(r, opts),
   loadDoc: (c, p, opts) => fileIO.loadDoc(c, p, opts),
   flash: (msg) => flash(msg),
   tabsEnabled,

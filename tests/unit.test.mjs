@@ -647,6 +647,46 @@ test('tabs.js 支持关闭其他、关闭右侧与路径重映射', async () => 
   await mgr.closeTabsToRight('/docs/b.md');
   assert.deepEqual(mgr.documentTabs.map((t) => t.path), ['/docs/a.md', '/docs/b.md']);
 
+  // 关闭其他，只留 a.md（活动标签原本是 b.md，因此应自动打开 a.md，且传 snapshotOld:false 不回填 b.md）
+  let mgrRef = null;
+  const mgr2State = { path: '/docs/b.md' };
+  const mgr2 = createTabsManager({
+    state: mgr2State,
+    view: { state: { doc: { toString: () => '' } } },
+    shell: { syncTabs: () => {} },
+    samePath: (a, b) => String(a || '').toLowerCase() === String(b || '').toLowerCase(),
+    settleCurrentDocument: async () => true,
+    openDiskDoc: (r, opts = {}) => {
+      if (opts.snapshotOld !== false) mgrRef.snapshotDocumentTab(mgr2State.path);
+      mgr2State.path = r.path;
+      mgrRef.snapshotDocumentTab(r.path);
+      mgrRef.syncTabs();
+    },
+    loadDoc: (_c, p, opts = {}) => {
+      if (opts.snapshotOld !== false) mgrRef.snapshotDocumentTab(mgr2State.path);
+      mgr2State.path = p;
+      mgrRef.syncTabs();
+    },
+    flash: () => {},
+    storage: store,
+    getStudio: () => ({
+      readFile: async (p) => ({ path: p, content: '# ' + p, encoding: 'utf-8' }),
+    }),
+  });
+  mgrRef = mgr2;
+  mgr2.documentTabs.push(
+    { path: '/docs/a.md', editorState: null },
+    { path: '/docs/b.md', editorState: null },
+  );
+  // 一次点击关闭当前活动标签 b.md：不应再被 loadDoc 的 snapshotDocumentTab 重新加回
+  await mgr2.closeTab('/docs/b.md');
+  assert.deepEqual(mgr2.documentTabs.map((t) => t.path), ['/docs/a.md']);
+  assert.equal(mgr2State.path, '/docs/a.md');
+  // 关闭最后一个活动标签 a.md：标签列表应一次清空
+  await mgr2.closeTab('/docs/a.md');
+  assert.deepEqual(mgr2.documentTabs.map((t) => t.path), []);
+  assert.equal(mgr2State.path, null);
+
   // 关闭其他，只留 a.md（活动标签原本是 b.md，因此应自动打开 a.md）
   await mgr.closeOtherTabs('/docs/a.md');
   assert.deepEqual(mgr.documentTabs.map((t) => t.path), ['/docs/a.md']);

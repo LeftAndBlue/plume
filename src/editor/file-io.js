@@ -64,13 +64,13 @@ export function createFileIO({
     }
   }
 
-  function loadDoc(content, pathOrName, { keepHistory = false } = {}) {
+  function loadDoc(content, pathOrName, { keepHistory = false, snapshotOld = true } = {}) {
     Object.assign(state, detectDocFormat(content));
     shell.setWordGoal(getWordGoal(typeof pathOrName === 'string' ? pathOrName : null));
     state.encoding = 'utf-8';
     const text = withTrailingBlank(normalizeMarkdownText(content));
     const oldPath = state.path;
-    if (!keepHistory) tabs.snapshotDocumentTab(oldPath);
+    if (!keepHistory && snapshotOld) tabs.snapshotDocumentTab(oldPath);
     const isFullPath = !!pathOrName && /[\\/]/.test(pathOrName);
     const previousTab = !keepHistory && isFullPath ? tabs.findCachedTab(pathOrName, text) : null;
     cancelCellEditor();
@@ -115,8 +115,8 @@ export function createFileIO({
     if (typeof onDocLoaded === 'function') onDocLoaded(state.path);
   }
 
-  function openDiskDoc(r) {
-    loadDoc(r.content, r.path);
+  function openDiskDoc(r, opts) {
+    loadDoc(r.content, r.path, opts);
     state.encoding = String(r.encoding || 'utf-8').toLowerCase();
     if (state.encoding !== 'utf-8') {
       flash(`已按 ${state.encoding.toUpperCase()} 编码打开，保存时保持原编码`);
