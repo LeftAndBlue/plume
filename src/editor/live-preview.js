@@ -1263,7 +1263,10 @@ export const livePreview = ViewPlugin.fromClass(
       const forced = u.transactions.some((tr) =>
         tr.effects.some((e) => e.is(refreshDecorations) || e.is(setSourceMode))
       );
-      if (u.docChanged || u.selectionSet || u.viewportChanged || u.focusChanged || u.heightChanged || forced) {
+      // 整篇替换（如外部编辑器 Cursor 修改后自动重载）会触发 Lezer 异步分片解析；
+      // 解析完成后 CM 会发一个仅更新 syntaxTree 的空变更事务，这里必须重算装饰，否则样式会停留在半解析状态。
+      const treeChanged = syntaxTree(u.startState) !== syntaxTree(u.state);
+      if (u.docChanged || u.selectionSet || u.viewportChanged || u.focusChanged || u.heightChanged || treeChanged || forced) {
         const r = buildInline(u.view);
         this.decorations = r.deco;
         this.atomics = r.atomic;

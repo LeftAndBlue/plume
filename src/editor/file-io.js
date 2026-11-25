@@ -3,6 +3,10 @@
  */
 import { Transaction } from '@codemirror/state';
 import { history } from '@codemirror/commands';
+import { ensureSyntaxTree, unfoldEffect } from '@codemirror/language';
+import { refreshDecorations } from './live-preview.js';
+import { setEditingImage } from './widgets.js';
+import { clearTableSelection } from './table-selection.js';
 import { detectDocFormat, serializeForDisk, withTrailingBlank } from './doc-format.js';
 import { normalizeMarkdownText } from './rich-doc.js';
 import { RECENT_KEY } from './storage-keys.js';
@@ -289,18 +293,40 @@ export function createFileIO({
     });
   }
 
+  let pendingFocusRefresh = false;
+  let pendingExternalFile = null;
+
+  function refreshAfterExternalReload() {
+    if (!view || !view.dom?.isConnected) return;
+    // 尽量同步补齐语法树，再强制重算块级/行内装饰与布局测量，避免后台重载后样式错乱
+    try {
+      ensureSyntaxTree(view.state, Math.min(view.state.doc.length, 200000), 120);
+    } catch {
+      /* ignore */
+    }
+    view.dispatch({ effects: refreshDecorations.of(null) });
+    view.requestMeasure();
+  }
+
   function reloadFromDisk(content, encoding) {
     Object.assign(state, detectDocFormat(content));
     state.encoding = String(encoding || 'utf-8').toLowerCase();
     const text = withTrailingBlank(normalizeMarkdownText(content));
     const sel = view.state.selection.main;
+    const prevLen = view.state.doc.length;
     cancelCellEditor();
+    clearTableSelection();
     view.dispatch({
-      changes: { from: 0, to: view.state.doc.length, insert: text },
+      changes: { from: 0, to: prevLen, insert: text },
       selection: {
         anchor: Math.min(sel.anchor, text.length),
         head: Math.min(sel.head, text.length),
       },
+      effects: [
+        setEditingImage.of(null),
+        unfoldEffect.of({ from: 0, to: prevLen }),
+        refreshDecorations.of(null),
+      ],
       scrollIntoView: true,
     });
     forgetMissingPastes(text);
@@ -308,11 +334,32 @@ export function createFileIO({
     tabs.snapshotDocumentTab(state.path);
     updateStatus('');
     renderOutline();
+    if (typeof document !== 'undefined' && (!document.hasFocus() || document.hidden)) {
+      pendingFocusRefresh = true;
+    }
+    requestAnimationFrame(refreshAfterExternalReload);
   }
 
   function bindExternalChange() {
-    window.studio?.onExternalChange?.(async (file) => {
-      if (handlingExternalChange || !samePath(file, state.path)) return;
+    if (typeof window !== 'undefined') {
+      const onResume = () => {
+        if (!pendingFocusRefresh) return;
+        pendingFocusRefresh = false;
+        requestAnimationFrame(refreshAfterExternalReload);
+      };
+      window.addEventListener('focus', onResume);
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) onResume();
+      });
+    }
+
+    const handleFileChange = async (file) => {
+      if (!samePath(file, state.path)) return;
+      if (handlingExternalChange) {
+        // Cursor 连续快速写入（如流式改写 + 格式化保存）时记住最后一次，不丢最终版本
+        pendingExternalFile = file;
+        return;
+      }
       handlingExternalChange = true;
       try {
         const r = await window.studio.readFile(file);
@@ -332,8 +379,15 @@ export function createFileIO({
         flash('无法读取外部修改：' + (err?.message || err));
       } finally {
         handlingExternalChange = false;
+        if (pendingExternalFile) {
+          const next = pendingExternalFile;
+          pendingExternalFile = null;
+          if (samePath(next, state.path)) handleFileChange(next);
+        }
       }
-    });
+    };
+
+    window.studio?.onExternalChange?.(handleFileChange);
   }
 
   async function reloadModifiedFiles(paths) {
