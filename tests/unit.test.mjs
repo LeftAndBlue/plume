@@ -44,6 +44,7 @@ import {
 } from '../src/editor/jump-history.js';
 import { styleWeChatHtml } from '../src/editor/wechat-html.js';
 import { createTabsManager } from '../src/editor/tabs.js';
+import { resolveSrc, setDocBase } from '../src/editor/widgets.js';
 import {
   clearAllDraftEntries,
   draftPreviewText,
@@ -856,4 +857,103 @@ test('表格多选批量操作：清空、格式切换、批量对齐、整块�
   // 整块右移选中的第 0..1 列
   assert.equal(moveTableColsBlock(rows, [0, 1], 1), true);
   assert.deepEqual(rows[0], ['列C', '列A', '列B']);
+});
+
+test('tabs.js 支持分栏状态同步、聚焦切换、关闭/提升分栏与会话恢复', async () => {
+  const synced = [];
+  const focused = [];
+  const restoredSplits = [];
+  const state = { path: '/docs/a.md' };
+  let splitPath = '/docs/b.md';
+  let promoted = false;
+  const store = createMockStorage();
+
+  const mgr = createTabsManager({
+    state,
+    view: { state: { doc: { toString: () => '' } } },
+    shell: { syncTabs: (list) => synced.push(list) },
+    samePath: (a, b) => !!a && !!b && String(a).toLowerCase() === String(b).toLowerCase(),
+    settleCurrentDocument: async () => true,
+    openDiskDoc: (r) => {
+      state.path = r.path;
+    },
+    loadDoc: () => {},
+    flash: () => {},
+    storage: store,
+    getStudio: () => ({
+      readFile: async (p) => ({ path: p, content: '# ' + p, encoding: 'utf-8' }),
+    }),
+    getSplitPath: () => splitPath,
+    onBeforeCloseSplit: async () => {
+      splitPath = null;
+      return true;
+    },
+    onPromoteSplit: async () => {
+      promoted = true;
+      state.path = splitPath;
+      splitPath = null;
+      return true;
+    },
+    onFocusPane: (pane) => focused.push(pane),
+    onRestoreSplit: async (p) => {
+      restoredSplits.push(p);
+    },
+  });
+
+  mgr.documentTabs.push(
+    { path: '/docs/a.md', editorState: null },
+    { path: '/docs/b.md', editorState: null },
+    { path: '/docs/c.md', editorState: null },
+  );
+  mgr.syncTabs();
+  assert.deepEqual(synced.at(-1), [
+    { path: '/docs/a.md', active: true, split: false },
+    { path: '/docs/b.md', active: false, split: true },
+    { path: '/docs/c.md', active: false, split: false },
+  ]);
+
+  // 点击当前主文件与分栏文件标签应分别聚焦左右两栏
+  await mgr.openTab('/docs/a.md');
+  await mgr.openTab('/docs/b.md');
+  assert.deepEqual(focused, ['primary', 'split']);
+
+  // 关闭 c.md 后再关闭主文件 a.md：剩余 b.md 正在分栏中，应直接提升为主文件
+  await mgr.closeTab('/docs/c.md');
+  await mgr.closeTab('/docs/a.md');
+  assert.equal(promoted, true);
+  assert.equal(state.path, '/docs/b.md');
+  assert.equal(splitPath, null);
+
+  // 关闭分栏标签时先触发 onBeforeCloseSplit，且不切换主文件
+  state.path = '/docs/a.md';
+  splitPath = '/docs/b.md';
+  mgr.documentTabs.splice(
+    0,
+    mgr.documentTabs.length,
+    { path: '/docs/a.md', editorState: null },
+    { path: '/docs/b.md', editorState: null },
+  );
+  await mgr.closeTab('/docs/b.md');
+  assert.equal(splitPath, null);
+  assert.equal(state.path, '/docs/a.md');
+  assert.deepEqual(mgr.documentTabs.map((t) => t.path), ['/docs/a.md']);
+
+  // 会话持久化与恢复分栏路径
+  splitPath = '/docs/b.md';
+  mgr.ensureTab('/docs/b.md');
+  await mgr.restoreSession();
+  assert.deepEqual(restoredSplits, ['/docs/b.md']);
+});
+
+test('resolveSrc 支持按分栏独立的 baseOverride 解析不同目录的相对图片', () => {
+  setDocBase('file:///C:/workspace/primary/');
+  assert.equal(
+    resolveSrc('assets/a.png'),
+    'file:///C:/workspace/primary/assets/a.png',
+  );
+  assert.equal(
+    resolveSrc('assets/b.png', 'file:///C:/workspace/other/'),
+    'file:///C:/workspace/other/assets/b.png',
+  );
+  setDocBase(null);
 });

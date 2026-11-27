@@ -28,6 +28,7 @@ import {
   TextWidget,
   TocWidget,
   currentDocBase,
+  docBaseField,
 } from './widgets.js';
 
 /** 用于在非文档变更时强制重算装饰（例如切换专注模式） */
@@ -450,7 +451,7 @@ function computeBlockDecos(state) {
               imgFrom,
               imgTo,
               false,
-              currentDocBase(),
+              state.field(docBaseField, false) ?? currentDocBase(),
               editing,
               spec.width,
               spec.align,
@@ -614,7 +615,7 @@ function buildInline(view) {
         from,
         end,
         true,
-        currentDocBase(),
+        state.field(docBaseField, false) ?? currentDocBase(),
         editing,
         brace ? brace.width : '',
         brace ? brace.align : '',

@@ -43,12 +43,18 @@ const SANS = '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "O
 const SERIF = '"Charter", Georgia, Cambria, "Times New Roman", "LXGW WenKai", "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif';
 
 let currentPrefs = { ...DEFAULT_PREFS };
-let editorViewRef = null;
+const editorViewRefs = new Set();
 let userUrls = null;
 
 export function bindThemeEditorView(view) {
-  editorViewRef = view;
-  if (view) view.requestMeasure();
+  if (!view) return;
+  editorViewRefs.add(view);
+  view.requestMeasure();
+}
+
+export function unbindThemeEditorView(view) {
+  if (!view) return;
+  editorViewRefs.delete(view);
 }
 
 export function getAppearance() {
@@ -184,10 +190,13 @@ function applyAppearance() {
   syncNativeChrome(p.theme);
   document.dispatchEvent(new CustomEvent('appearance-change'));
 
-  if (editorViewRef) {
+  if (editorViewRefs.size) {
     requestAnimationFrame(() => {
-      editorViewRef.requestMeasure();
-      editorViewRef.dispatch({ effects: refreshDecorations.of(null) });
+      for (const v of editorViewRefs) {
+        if (!v?.dom?.isConnected) continue;
+        v.requestMeasure();
+        v.dispatch({ effects: refreshDecorations.of(null) });
+      }
     });
   }
 }

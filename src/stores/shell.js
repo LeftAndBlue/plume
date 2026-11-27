@@ -55,6 +55,13 @@ export const useShellStore = defineStore('shell', {
     /** 标签栏是否显示：左端按钮收起，状态栏 / 视图菜单恢复，偏好持久化 */
     tabsVisible: readBool(TABS_VISIBLE_KEY),
 
+    // 分栏展示（右侧第二栏）
+    splitPath: null,
+    splitFileName: '',
+    splitDirty: false,
+    /** 当前聚焦栏位：primary（左侧主编辑区）或 split（右侧分栏） */
+    activePane: 'primary',
+
     // 文件树：组件自管展开/懒加载，运行时通过版本号请求刷新
     fileTreeVersion: 0,
 
@@ -117,6 +124,20 @@ export const useShellStore = defineStore('shell', {
     },
     syncTabs(tabs) {
       this.tabs = tabs;
+    },
+    setSplitDoc(path) {
+      this.splitPath = path || null;
+      this.splitFileName = path ? path.split(/[\\/]/).pop() : '';
+      if (!path) {
+        this.splitDirty = false;
+        if (this.activePane === 'split') this.activePane = 'primary';
+      }
+    },
+    setSplitDirty(v) {
+      this.splitDirty = !!v;
+    },
+    setActivePane(pane) {
+      this.activePane = pane === 'split' && this.splitPath ? 'split' : 'primary';
     },
     bumpFileTree() {
       this.fileTreeVersion++;

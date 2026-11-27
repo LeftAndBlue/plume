@@ -16,6 +16,11 @@ export function createTabsManager({
   tabsEnabled = true,
   storage = typeof localStorage !== 'undefined' ? localStorage : null,
   getStudio = () => (typeof window !== 'undefined' ? window.studio : null),
+  getSplitPath = () => null,
+  onBeforeCloseSplit = async () => true,
+  onPromoteSplit = null,
+  onFocusPane = null,
+  onRestoreSplit = null,
 }) {
   /** @type {Array<{ path: string, editorState: any }>} */
   const documentTabs = [];
@@ -25,13 +30,14 @@ export function createTabsManager({
     if (!tabsEnabled || !studio || !storage) return;
     try {
       const tabs = documentTabs.map((t) => t.path).filter(Boolean);
-      if (!tabs.length && !state.path) {
+      const split = getSplitPath?.() || null;
+      if (!tabs.length && !state.path && !split) {
         storage.removeItem(SESSION_KEY);
         return;
       }
       storage.setItem(
         SESSION_KEY,
-        JSON.stringify({ tabs, active: state.path, updatedAt: Date.now() }),
+        JSON.stringify({ tabs, active: state.path, split, updatedAt: Date.now() }),
       );
     } catch {
       /* 存储不可用时退化为不恢复会话 */
@@ -39,8 +45,13 @@ export function createTabsManager({
   }
 
   function syncTabs() {
+    const splitPath = getSplitPath?.() || null;
     shell.syncTabs(
-      documentTabs.map((tab) => ({ path: tab.path, active: samePath(tab.path, state.path) })),
+      documentTabs.map((tab) => ({
+        path: tab.path,
+        active: samePath(tab.path, state.path),
+        split: !!splitPath && samePath(tab.path, splitPath),
+      })),
     );
     persistSession();
   }
@@ -56,6 +67,7 @@ export function createTabsManager({
     if (!session || !Array.isArray(session.tabs)) return;
     const paths = session.tabs.filter((p) => typeof p === 'string' && p);
     const active = typeof session.active === 'string' ? session.active : null;
+    const split = typeof session.split === 'string' && session.split ? session.split : null;
     for (const p of paths) {
       if (!documentTabs.some((t) => samePath(t.path, p))) {
         documentTabs.push({ path: p, editorState: null });
@@ -66,6 +78,14 @@ export function createTabsManager({
       try {
         const r = await studio.readFile(active);
         openDiskDoc(r);
+        if (
+          split &&
+          !samePath(split, active) &&
+          paths.some((p) => samePath(p, split)) &&
+          typeof onRestoreSplit === 'function'
+        ) {
+          await onRestoreSplit(split);
+        }
         return;
       } catch {
         /* 活动文件已不存在：保留其余标签，正文留空 */
@@ -121,8 +141,25 @@ export function createTabsManager({
     snapshotDocumentTab(newPath);
   }
 
+  function ensureTab(path) {
+    if (!tabsEnabled || !path) return;
+    if (!documentTabs.some((item) => samePath(item.path, path))) {
+      documentTabs.push({ path, editorState: null });
+    }
+    syncTabs();
+  }
+
   async function openTab(path) {
-    if (samePath(path, state.path) || !(await settleCurrentDocument())) return;
+    if (samePath(path, state.path)) {
+      onFocusPane?.('primary');
+      return;
+    }
+    const splitPath = getSplitPath?.();
+    if (splitPath && samePath(path, splitPath)) {
+      onFocusPane?.('split');
+      return;
+    }
+    if (!(await settleCurrentDocument())) return;
     const studio = getStudio();
     if (!studio?.readFile) return;
     try {
@@ -136,12 +173,23 @@ export function createTabsManager({
   async function closeTab(path) {
     const tab = documentTabs.find((item) => samePath(item.path, path));
     if (!tab) return;
+    const splitPath = getSplitPath?.();
+    if (splitPath && samePath(tab.path, splitPath)) {
+      if (!(await onBeforeCloseSplit(tab.path))) return;
+      const idx = documentTabs.indexOf(tab);
+      if (idx >= 0) documentTabs.splice(idx, 1);
+      syncTabs();
+      return;
+    }
     const active = samePath(tab.path, state.path);
     if (active && !(await settleCurrentDocument())) return;
     const index = documentTabs.indexOf(tab);
     documentTabs.splice(index, 1);
     if (active) {
       const next = documentTabs[Math.max(0, index - 1)];
+      if (next && splitPath && samePath(next.path, splitPath) && typeof onPromoteSplit === 'function') {
+        if (await onPromoteSplit(next.path)) return;
+      }
       const studio = getStudio();
       if (next && studio?.readFile) {
         try {
@@ -162,10 +210,18 @@ export function createTabsManager({
   async function closeOtherTabs(keepPath) {
     const target = documentTabs.find((item) => samePath(item.path, keepPath));
     if (!target) return;
+    const splitPath = getSplitPath?.();
     const keepingActive = samePath(target.path, state.path);
+    const keepingSplit = !!splitPath && samePath(target.path, splitPath);
+    if (splitPath && !keepingSplit) {
+      if (!(await onBeforeCloseSplit(splitPath))) return;
+    }
     if (!keepingActive && !(await settleCurrentDocument())) return;
     documentTabs.splice(0, documentTabs.length, target);
     if (!keepingActive) {
+      if (keepingSplit && typeof onPromoteSplit === 'function') {
+        if (await onPromoteSplit(target.path)) return;
+      }
       const studio = getStudio();
       if (studio?.readFile) {
         try {
@@ -185,14 +241,21 @@ export function createTabsManager({
     const idx = documentTabs.findIndex((item) => samePath(item.path, pivotPath));
     if (idx < 0 || idx >= documentTabs.length - 1) return;
     const removed = documentTabs.slice(idx + 1);
+    const splitPath = getSplitPath?.();
+    const splitRemoved = !!splitPath && removed.some((t) => samePath(t.path, splitPath));
+    if (splitRemoved && !(await onBeforeCloseSplit(splitPath))) return;
     const activeRemoved = removed.some((t) => samePath(t.path, state.path));
     if (activeRemoved && !(await settleCurrentDocument())) return;
     documentTabs.splice(idx + 1);
     if (activeRemoved) {
+      const nextTarget = documentTabs[idx];
+      if (nextTarget && splitPath && samePath(nextTarget.path, splitPath) && typeof onPromoteSplit === 'function') {
+        if (await onPromoteSplit(nextTarget.path)) return;
+      }
       const studio = getStudio();
       if (studio?.readFile) {
         try {
-          const r = await studio.readFile(documentTabs[idx].path);
+          const r = await studio.readFile(nextTarget.path);
           openDiskDoc(r, { snapshotOld: false });
           return;
         } catch (err) {
@@ -212,6 +275,7 @@ export function createTabsManager({
     remapDocumentTabs,
     removeDocumentTabsUnder,
     syncTabs,
+    ensureTab,
     snapshotDocumentTab,
     findCachedTab,
     replaceTabPath,

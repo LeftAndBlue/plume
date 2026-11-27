@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, markRaw } from 'vue';
+import { ArrowLeftRight, X } from 'lucide-vue-next';
 import { useShellStore } from './stores/shell.js';
 import TitleBar from './components/TitleBar.vue';
 import Sidebar from './components/Sidebar.vue';
@@ -25,10 +26,59 @@ onMounted(() => {
     <div id="workspace">
       <TitleBar />
       <DocumentTabs />
-      <div id="editor-area">
-        <main id="main">
+      <div id="editor-area" :class="{ 'is-split': !!shell.splitPath }">
+        <main
+          id="main"
+          :class="{ 'is-pane-focused': shell.splitPath && shell.activePane === 'primary' }"
+          @mousedown="shell.runtime?.focusPane?.('primary')"
+        >
+          <div v-if="shell.splitPath" class="split-pane-header" :title="shell.path || ''">
+            <span class="split-pane-dot" :class="{ 'is-active': shell.activePane === 'primary' }"></span>
+            <span class="split-pane-title">{{ shell.fileName }}</span>
+            <span v-if="shell.dirty" class="split-pane-dirty" :title="t('chrome.unsaved')">●</span>
+          </div>
           <div id="editor-host"></div>
         </main>
+        <div
+          v-if="shell.splitPath"
+          id="split-divider"
+          role="separator"
+          aria-orientation="vertical"
+          :title="t('tabs.swapSplit')"
+        ></div>
+        <section
+          v-if="shell.splitPath"
+          id="split-pane"
+          :class="{ 'is-pane-focused': shell.activePane === 'split' }"
+          @mousedown="shell.runtime?.focusPane?.('split')"
+        >
+          <div class="split-pane-header" :title="shell.splitPath">
+            <span class="split-pane-dot" :class="{ 'is-active': shell.activePane === 'split' }"></span>
+            <span class="split-pane-title">{{ shell.splitFileName }}</span>
+            <span v-if="shell.splitDirty" class="split-pane-dirty" :title="t('chrome.unsaved')">●</span>
+            <div class="split-pane-actions">
+              <button
+                type="button"
+                class="split-pane-btn"
+                :title="t('split.swap')"
+                :aria-label="t('split.swap')"
+                @click.stop="shell.runtime?.swapSplit?.()"
+              >
+                <ArrowLeftRight :size="13" />
+              </button>
+              <button
+                type="button"
+                class="split-pane-btn"
+                :title="t('split.close')"
+                :aria-label="t('split.close')"
+                @click.stop="shell.runtime?.closeSplit?.()"
+              >
+                <X :size="13" />
+              </button>
+            </div>
+          </div>
+          <div id="split-editor-host"></div>
+        </section>
       </div>
       <StatusBar />
     </div>

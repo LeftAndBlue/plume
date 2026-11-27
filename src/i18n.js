@@ -24,6 +24,11 @@ const zhCN = {
 
   "tabs.aria": "打开的文档",
   "tabs.close": "关闭标签",
+  "tabs.split": "分栏展示",
+  "tabs.closeSplit": "关闭分栏",
+  "tabs.swapSplit": "交换左右分栏",
+  "split.close": "关闭分栏",
+  "split.swap": "交换左右分栏",
 
   "status.toggleSidebar": "展开 / 收起侧栏",
   "status.toggleSidebarAria": "展开或收起侧栏",
@@ -257,6 +262,11 @@ const en = {
 
   "tabs.aria": "Open documents",
   "tabs.close": "Close tab",
+  "tabs.split": "Split right",
+  "tabs.closeSplit": "Close split",
+  "tabs.swapSplit": "Swap split panes",
+  "split.close": "Close split",
+  "split.swap": "Swap split panes",
 
   "status.toggleSidebar": "Toggle sidebar",
   "status.toggleSidebarAria": "Toggle sidebar",

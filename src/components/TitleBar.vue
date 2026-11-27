@@ -42,8 +42,8 @@ function onChromeMouseDown(event) {
     <!-- 汉堡按钮由 menubar.js 填充并接管（Typora 式菜单页） -->
     <button id="menu-toggle" class="menu-toggle" type="button" :title="t('chrome.menu')" :aria-label="t('chrome.menu')" @mousedown.stop></button>
     <div class="chrome-title" :title="t('chrome.dragHint')" @dblclick="onTitleDblClick">
-      <span id="st-file">{{ shell.fileName }}</span>
-      <span id="st-dirty" class="st-dirty">{{ shell.dirty ? t('chrome.unsaved') : '' }}</span>
+      <span id="st-file">{{ shell.activePane === 'split' && shell.splitPath ? shell.splitFileName : shell.fileName }}</span>
+      <span id="st-dirty" class="st-dirty">{{ (shell.activePane === 'split' && shell.splitPath ? shell.splitDirty : shell.dirty) ? t('chrome.unsaved') : '' }}</span>
     </div>
     <!-- 菜单栏由 editor/menubar.js 按声明式菜单表渲染（Alt 助记键 / 方向键行为不变） -->
     <nav id="menubar" role="menubar" :aria-label="t('chrome.mainMenu')"></nav>

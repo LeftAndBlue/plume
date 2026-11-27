@@ -9,6 +9,7 @@ export const WORD_GOAL_KEY = "plume.wordGoals.v1";
 export const SIDE_KEY = "plume.side";
 export const SIDE_OPEN_KEY = "plume.sidebar";
 export const SIDEBAR_WIDTH_KEY = "plume.sidebarWidth";
+export const SPLIT_RATIO_KEY = "plume.splitRatio";
 /** 是否显示文档标签栏（标签栏左端按钮可收起，状态栏 / 视图菜单可恢复） */
 export const TABS_VISIBLE_KEY = "plume.tabsVisible";
 export const IMAGE_FOLDER_KEY = "plume.imageFolder.v1";

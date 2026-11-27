@@ -1,3 +1,4 @@
+import { nextTick } from "vue";
 import {
   ChangeSet,
   Compartment,
@@ -121,6 +122,7 @@ import {
   SIDE_KEY,
   SIDE_OPEN_KEY,
   SIDEBAR_WIDTH_KEY,
+  SPLIT_RATIO_KEY,
   IMAGE_FOLDER_KEY,
   IMAGE_UPLOAD_MODE_KEY,
   IMAGE_UPLOAD_PROVIDER_KEY,
@@ -138,14 +140,17 @@ import {
   currentThemeId,
   getAppearance,
   initTheme,
+  unbindThemeEditorView,
   updateAppearance,
 } from "./theme.js";
 import {
   blinkLine,
+  docBaseField,
   editingImageField,
   formatImageMd,
   parseImageMd,
   setDocBase,
+  setDocBaseEffect,
   setEditingImage,
   setLocalUrlConverter,
 } from "./widgets.js";
@@ -360,274 +365,319 @@ const state = {
 // 让字段按新状态重新创建，旧文件的记录才不会跟着映射进新文件。
 const historySlot = new Compartment();
 
+const splitState = {
+  path: null,
+  dir: null,
+  dirty: false,
+  autosave: true,
+  eol: "\n",
+  bom: false,
+  encoding: "utf-8",
+};
+let splitView = null;
+let splitHistorySlot = null;
+let splitAutosaveTimer = null;
+
+function activeDocContext() {
+  if (shell.activePane === "split" && splitView && splitState.path) {
+    return { isSplit: true, view: splitView, state: splitState, save: saveSplit };
+  }
+  return { isSplit: false, view, state, save };
+}
+
+function activeView() {
+  return activeDocContext().view;
+}
+
+function activeState() {
+  return activeDocContext().state;
+}
+
+function createEditorExtensions({ historySlot: slot, getDocState, getDocView, onUpdate, onFocus }) {
+  return [
+    slot.of(history()),
+    // 正文最后一行一旦写上字，下面立刻再留一行空行，不用先按回车才有地方可点。
+    // 这个换行必须并进同一次事务。若另起一条 addToHistory:false 的事务，
+    // 插入点刚好落在本次修改的末尾时，历史映射会把这次修改整个丢掉，
+    // 粘到最后一行之后 Ctrl+Z 就撤不回来。
+    EditorState.transactionFilter.of((tr) => {
+      if (!tr.docChanged) return tr;
+      const last = tr.newDoc.line(tr.newDoc.lines);
+      if (!last.text) return tr;
+      const nl = ChangeSet.of(
+        { from: tr.newDoc.length, insert: "\n" },
+        tr.newDoc.length,
+      );
+      return tr.startState.update({
+        changes: tr.changes.compose(nl),
+        selection: tr.selection,
+        effects: tr.effects,
+        annotations: tr.annotations,
+        scrollIntoView: tr.scrollIntoView,
+        filter: false,
+      });
+    }),
+    // drawRangeCursor: false —— CM 默认会在「有选区时」再额外画一个闪烁的光标在选区末端，
+    // 选区停在那儿不动它也一直闪，很吵。Typora 选中文字时只有高亮、没有光标。
+    drawSelection({ drawRangeCursor: false }),
+    // 正文光标跟这一行的字，代码块光标只跟代码行高，两套互不借用。
+    caretFit,
+    // 代码块里的多行选区只铺在代码文字上，不盖行号和行尾空白。
+    codeSelectionFit,
+    createQuickInsert({
+      onCommand: (cmd) => {
+        if (cmd === "insert-table") pickTableSize();
+      },
+    }),
+    headingFoldExtension(),
+    autoPair,
+    /**
+     * 粘贴必须在 CM 自带的 paste 处理器之前接管。
+     * CM 的 computeHandlers 是先塞插件的 domEventHandlers、最后才塞内置处理器，
+     * 我们返回 true 就会 preventDefault 并 break，内置插入不会发生。
+     * 以前这些逻辑挂在 document 的冒泡监听上 —— 那时 CM 早把文本插进去了、选区也没了，
+     * 「选中文字 + 粘贴链接」在真实 Ctrl+V 下其实根本不生效。
+     */
+    Prec.highest(
+      EditorView.domEventHandlers({
+        // 注意签名是 (event, view)：CM 内部用 handler.call(plugin, event, view) 调。
+        // 写反了会在第一行就静默放手，粘贴全部落到内置处理器里。
+        paste(event, v) {
+          const data = event.clipboardData;
+          if (!data) return false;
+          const items = data.items ? [...data.items] : [];
+          const image = items.find(
+            (it) => it.type && it.type.startsWith("image/"),
+          );
+          if (image) {
+            event.preventDefault();
+            const file = image.getAsFile();
+            if (file) {
+              const ext = (image.type.split("/")[1] || "png").replace(
+                "jpeg",
+                "jpg",
+              );
+              (async () => {
+                if (v === view && window.studio)
+                  await attachImage(await file.arrayBuffer(), ext);
+                else {
+                  insertAtCursor(`![](${URL.createObjectURL(file)})`, undefined, v);
+                  if (v === view) flash("浏览器模式下图片不会落盘");
+                }
+              })();
+            }
+            return true;
+          }
+          if (handlePastedText(data.getData("text/plain"), v)) {
+            event.preventDefault();
+            return true;
+          }
+          return false;
+        },
+        copy(event, v) {
+          const sel = v.state.selection;
+          if (sel.main.empty || !event.clipboardData) return false;
+          const { html, plain } = renderSelectionForClipboard(v.state, getDocState().dir);
+          if (!plain && !html) return false;
+          event.preventDefault();
+          event.clipboardData.setData("text/plain", plain);
+          event.clipboardData.setData("text/html", html);
+          return true;
+        },
+        cut(event, v) {
+          const sel = v.state.selection;
+          if (sel.main.empty || !event.clipboardData) return false;
+          const { html, plain } = renderSelectionForClipboard(v.state, getDocState().dir);
+          if (!plain && !html) return false;
+          event.preventDefault();
+          event.clipboardData.setData("text/plain", plain);
+          event.clipboardData.setData("text/html", html);
+          v.dispatch(
+            v.state.changeByRange((r) => ({
+              changes: { from: r.from, to: r.to, insert: "" },
+              range: EditorSelection.cursor(r.from),
+            })),
+          );
+          return true;
+        },
+        focus(_event, v) {
+          onFocus?.(v);
+          return false;
+        },
+      }),
+    ),
+    dropCursor(),
+    // 按住 Alt 拖动能按列选出多行；Ctrl+点击再加一支光标
+    rectangularSelection(),
+    EditorState.allowMultipleSelections.of(true),
+    EditorState.tabSize.of(DEFAULT_INDENT_WIDTH),
+    indentUnit.of(" ".repeat(DEFAULT_INDENT_WIDTH)),
+    indentOnInput(),
+    /**
+     * 结构键（回车续标记、Tab 调列表层级）必须排在 markdown() 之前。
+     * markdown({addKeymap:true}) 自带 insertNewlineContinueMarkup，它同样抢 Enter，
+     * 且行为与我们不一致：在空的引用行上回车，它会留下一个光秃秃的 `>` 再补一行 `> `，
+     * 而 Typora 是直接退出引用。谁先绑定谁生效，所以这里用 Prec.high 明确压过去。
+     */
+    Prec.high(
+      keymap.of([
+        // ``` + 回车：补出结尾围栏，光标停在中间（手不用离开键盘）
+        // 代码块里 Ctrl+A 先选这块代码；已经全选再按一次才选整篇
+        { key: "Mod-a", run: selectCodeBlock },
+        { key: "Mod-Shift-c", run: (v) => { copyMarkdownSelection(v); return true; } },
+        { key: "Enter", run: fenceOnEnter },
+        { key: "Enter", run: (v) => codeBlockEnter(v, DEFAULT_INDENT_WIDTH, inCodeBlock) },
+        { key: "Enter", run: (v) => continueList(v, { tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
+        { key: "Enter", run: (v) => continueQuote(v, { tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
+        { key: "Enter", run: newlineAfterLazyQuote },
+        { key: "Shift-Enter", run: (v) => softNewline(v, { isCodeBlock: inCodeBlock }) },
+        { key: "Tab", run: (v) => handleTab(v, { indentWidth: DEFAULT_INDENT_WIDTH, tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
+        { key: "Shift-Tab", run: (v) => handleShiftTab(v, { indentWidth: DEFAULT_INDENT_WIDTH, tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
+        // 跨过零高度的隐藏围栏，不让光标困在代码块首尾。
+        { key: "ArrowLeft", run: (v) => navigateFence(v, "left") },
+        { key: "ArrowRight", run: (v) => navigateFence(v, "right") },
+        { key: "ArrowUp", run: (v) => navigateFence(v, "up") },
+        { key: "ArrowDown", run: (v) => navigateFence(v, "down") },
+        // 空标题整行只有 #，退格要直接拆掉，不能只去吃上一行的换行
+        { key: "Backspace", run: exitHeadingOnBackspace },
+        { key: "Delete", run: exitHeadingOnDelete },
+        // 空代码块再按删除：首尾围栏与空正文一次成对删掉
+        { key: "Backspace", run: deleteEmptyFence },
+        { key: "Backspace", run: exitListOnBackspace },
+        // 空引用行一次删整行；光标在引用正文开头时退一级引用，不再留下裸 >
+        { key: "Backspace", run: exitQuoteOnBackspace },
+        { key: "Delete", run: deleteEmptyFence },
+        // 非空块的围栏不能被误删成残片；源代码模式不拦截原始编辑
+        {
+          key: "Backspace",
+          run: (v) => (v.state.field(sourceModeField, false) ? false : protectFenceBackspace(v)),
+        },
+        {
+          key: "Delete",
+          run: (v) => (v.state.field(sourceModeField, false) ? false : protectFenceDelete(v)),
+        },
+        // 代码块内软缩进纯空白行首：Backspace 按缩进宽度整步回删
+        { key: "Backspace", run: (v) => outdentSoftTabOnBackspace(v, DEFAULT_INDENT_WIDTH, inCodeBlock) },
+        // 空配对里按退格删掉一对，别留个孤儿括号；Delete 对称，同样整对删除
+        { key: "Backspace", run: deletePair },
+        { key: "Delete", run: deletePairForward },
+        // 行内代码/强调的边界标记也成对删：删一侧时另一侧一起去掉（内容保留），
+        // 剩下的标记不会和后文的同类符号错配，把大段正文吞成行内代码
+        { key: "Backspace", run: (v) => deleteInlinePair(v, false) },
+        { key: "Delete", run: (v) => deleteInlinePair(v, true) },
+      ]),
+    ),
+    markdown({
+      base: markdownLanguage,
+      codeLanguages,
+      addKeymap: true,
+      // GFM 的裸 URL 自动链接（https://...、www....），Ctrl+点击才能打开
+      extensions: [Autolink],
+    }),
+    syntaxHighlighting(codeHighlight),
+    highlightSelectionMatches(),
+    search({ top: true }),
+    zhPhrases,
+    docBaseField,
+    // 放在 blockDecorations 之前：后者初始化时要读它的值
+    sourceModeField,
+    blockViewportField,
+    editingImageField,
+    fenceDeletionGuard,
+    blockDecorations,
+    livePreview,
+    EditorView.lineWrapping,
+    placeholder("开始写点什么…"),
+    editingTheme,
+    keymap.of([
+      { key: "Mod-s", run: () => (run("save"), true) },
+      { key: "Mod-o", run: () => (openFile(), true) },
+      { key: "Mod-Shift-p", run: () => (quickOpen(), true) },
+      { key: "Mod-b", run: (v) => (wrap("**", "**", v), true) },
+      { key: "Mod-i", run: (v) => (wrap("*", "*", v), true) },
+      { key: "Mod-k", run: (v) => (insertLink(v), true) },
+      { key: "Mod-Shift-k", run: (v) => (insertFence(v), true) },
+      { key: "Mod-Shift-m", run: (v) => (insertMathBlock(v), true) },
+      { key: "Mod-Shift-t", run: () => (run("table"), true) },
+      { key: "Mod-1", run: (v) => (setHeading(1, v), true) },
+      { key: "Mod-2", run: (v) => (setHeading(2, v), true) },
+      { key: "Mod-3", run: (v) => (setHeading(3, v), true) },
+      { key: "Mod-4", run: (v) => (setHeading(4, v), true) },
+      { key: "Mod-5", run: (v) => (setHeading(5, v), true) },
+      { key: "Mod-6", run: (v) => (setHeading(6, v), true) },
+      {
+        key: "Mod-0",
+        run: (v) => {
+          const lineText = v.state.doc.lineAt(v.state.selection.main.head).text;
+          if (/^\s{0,3}#{1,6}\s+/.test(lineText)) setHeading(0, v);
+          else resetFontSize();
+          return true;
+        },
+      },
+      { key: "Mod-=", run: () => (adjustFontSize(1), true) },
+      { key: "Mod-Shift-=", run: () => (adjustFontSize(1), true) },
+      { key: "Mod--", run: () => (adjustFontSize(-1), true) },
+      { key: "Mod-Shift-0", run: () => (resetFontSize(), true) },
+      { key: "Alt-ArrowLeft", run: () => (jumpBack(), true) },
+      { key: "Alt-ArrowRight", run: () => (jumpForward(), true) },
+      { key: "Mod-Shift-1", run: () => (showSide("outline"), true) },
+      { key: "Mod-Shift-e", run: () => (showSide("files"), true) },
+      { key: "Mod-Shift-f", run: () => (focusFileSearch(), true) },
+      { key: "Mod-n", run: () => (newDoc(), true) },
+      { key: "Mod-Shift-s", run: () => (saveAs(), true) },
+      { key: "Mod-p", run: () => (doExportPdf(), true) },
+      { key: "Mod-e", run: (v) => (wrap("`", "`", v), true) },
+      { key: "Mod-Shift-x", run: (v) => (wrap("~~", "~~", v), true) },
+      // historyKeymap 里 Ctrl+Shift+Z 只是 mac 变体，Windows 上要自己补一条（Ctrl+Y 仍然可用）
+      { key: "Mod-Shift-z", run: (v) => (redo(v), true) },
+      // Ctrl+V 交给 Chromium 原生粘贴，纯文本走我们自己的实现（它会读到富文本/图片）
+      { key: "Mod-Shift-v", run: () => (run("paste-plain"), true) },
+      // 源代码模式：markdown 没有「注释」概念，Mod-/ 不会和 defaultKeymap 抢
+      { key: "Mod-/", run: () => (run("source-mode"), true) },
+      // 列表续行 / Tab 调层级在文件顶部用 Prec.high 绑定（要压过 markdown() 自带的 Enter）
+      { key: "F1", run: () => (run("shortcuts"), true) },
+      { key: "F8", run: () => (run("focus"), true) },
+      { key: "F9", run: () => (run("typewriter"), true) },
+      ...defaultKeymap,
+      ...searchKeymap,
+      ...historyKeymap,
+    ]),
+    EditorView.updateListener.of((u) => onUpdate(u)),
+  ];
+}
+
 const view = new EditorView({
   parent: host,
   state: EditorState.create({
     doc: "",
-    extensions: [
-      historySlot.of(history()),
-      // 正文最后一行一旦写上字，下面立刻再留一行空行，不用先按回车才有地方可点。
-      // 这个换行必须并进同一次事务。若另起一条 addToHistory:false 的事务，
-      // 插入点刚好落在本次修改的末尾时，历史映射会把这次修改整个丢掉，
-      // 粘到最后一行之后 Ctrl+Z 就撤不回来。
-      EditorState.transactionFilter.of((tr) => {
-        if (!tr.docChanged) return tr;
-        const last = tr.newDoc.line(tr.newDoc.lines);
-        if (!last.text) return tr;
-        const nl = ChangeSet.of(
-          { from: tr.newDoc.length, insert: "\n" },
-          tr.newDoc.length,
-        );
-        return tr.startState.update({
-          changes: tr.changes.compose(nl),
-          selection: tr.selection,
-          effects: tr.effects,
-          annotations: tr.annotations,
-          scrollIntoView: tr.scrollIntoView,
-          filter: false,
-        });
-      }),
-      // drawRangeCursor: false —— CM 默认会在「有选区时」再额外画一个闪烁的光标在选区末端，
-      // 选区停在那儿不动它也一直闪，很吵。Typora 选中文字时只有高亮、没有光标。
-      drawSelection({ drawRangeCursor: false }),
-      // 正文光标跟这一行的字，代码块光标只跟代码行高，两套互不借用。
-      caretFit,
-      // 代码块里的多行选区只铺在代码文字上，不盖行号和行尾空白。
-      codeSelectionFit,
-      createQuickInsert({
-        onCommand: (cmd) => {
-          if (cmd === "insert-table") pickTableSize();
-        },
-      }),
-      headingFoldExtension(),
-      autoPair,
-      /**
-       * 粘贴必须在 CM 自带的 paste 处理器之前接管。
-       * CM 的 computeHandlers 是先塞插件的 domEventHandlers、最后才塞内置处理器，
-       * 我们返回 true 就会 preventDefault 并 break，内置插入不会发生。
-       * 以前这些逻辑挂在 document 的冒泡监听上 —— 那时 CM 早把文本插进去了、选区也没了，
-       * 「选中文字 + 粘贴链接」在真实 Ctrl+V 下其实根本不生效。
-       */
-      Prec.highest(
-        EditorView.domEventHandlers({
-          // 注意签名是 (event, view)：CM 内部用 handler.call(plugin, event, view) 调。
-          // 写反了会在第一行就静默放手，粘贴全部落到内置处理器里。
-          paste(event, v) {
-            const data = event.clipboardData;
-            if (!data) return false;
-            const items = data.items ? [...data.items] : [];
-            const image = items.find(
-              (it) => it.type && it.type.startsWith("image/"),
-            );
-            if (image) {
-              event.preventDefault();
-              const file = image.getAsFile();
-              if (file) {
-                const ext = (image.type.split("/")[1] || "png").replace(
-                  "jpeg",
-                  "jpg",
-                );
-                (async () => {
-                  if (window.studio)
-                    await attachImage(await file.arrayBuffer(), ext);
-                  else {
-                    insertAtCursor(`![](${URL.createObjectURL(file)})`);
-                    flash("浏览器模式下图片不会落盘");
-                  }
-                })();
-              }
-              return true;
-            }
-            if (handlePastedText(data.getData("text/plain"))) {
-              event.preventDefault();
-              return true;
-            }
-            return false;
-          },
-          copy(event, v) {
-            const sel = v.state.selection;
-            if (sel.main.empty || !event.clipboardData) return false;
-            const { html, plain } = renderSelectionForClipboard(v.state, state.dir);
-            if (!plain && !html) return false;
-            event.preventDefault();
-            event.clipboardData.setData("text/plain", plain);
-            event.clipboardData.setData("text/html", html);
-            return true;
-          },
-          cut(event, v) {
-            const sel = v.state.selection;
-            if (sel.main.empty || !event.clipboardData) return false;
-            const { html, plain } = renderSelectionForClipboard(v.state, state.dir);
-            if (!plain && !html) return false;
-            event.preventDefault();
-            event.clipboardData.setData("text/plain", plain);
-            event.clipboardData.setData("text/html", html);
-            v.dispatch(
-              v.state.changeByRange((r) => ({
-                changes: { from: r.from, to: r.to, insert: "" },
-                range: EditorSelection.cursor(r.from),
-              })),
-            );
-            return true;
-          },
-        }),
-      ),
-      dropCursor(),
-      // 按住 Alt 拖动能按列选出多行；Ctrl+点击再加一支光标
-      rectangularSelection(),
-      EditorState.allowMultipleSelections.of(true),
-      EditorState.tabSize.of(DEFAULT_INDENT_WIDTH),
-      indentUnit.of(" ".repeat(DEFAULT_INDENT_WIDTH)),
-      indentOnInput(),
-      /**
-       * 结构键（回车续标记、Tab 调列表层级）必须排在 markdown() 之前。
-       * markdown({addKeymap:true}) 自带 insertNewlineContinueMarkup，它同样抢 Enter，
-       * 且行为与我们不一致：在空的引用行上回车，它会留下一个光秃秃的 `>` 再补一行 `> `，
-       * 而 Typora 是直接退出引用。谁先绑定谁生效，所以这里用 Prec.high 明确压过去。
-       */
-      Prec.high(
-        keymap.of([
-          // ``` + 回车：补出结尾围栏，光标停在中间（手不用离开键盘）
-          // 代码块里 Ctrl+A 先选这块代码；已经全选再按一次才选整篇
-          { key: "Mod-a", run: selectCodeBlock },
-          { key: "Mod-Shift-c", run: (v) => { copyMarkdownSelection(v); return true; } },
-          { key: "Enter", run: fenceOnEnter },
-          { key: "Enter", run: (v) => codeBlockEnter(v, DEFAULT_INDENT_WIDTH, inCodeBlock) },
-          { key: "Enter", run: (v) => continueList(v, { tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
-          { key: "Enter", run: (v) => continueQuote(v, { tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
-          { key: "Enter", run: newlineAfterLazyQuote },
-          { key: "Shift-Enter", run: (v) => softNewline(v, { isCodeBlock: inCodeBlock }) },
-          { key: "Tab", run: (v) => handleTab(v, { indentWidth: DEFAULT_INDENT_WIDTH, tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
-          { key: "Shift-Tab", run: (v) => handleShiftTab(v, { indentWidth: DEFAULT_INDENT_WIDTH, tabSize: DEFAULT_INDENT_WIDTH, isCodeBlock: inCodeBlock }) },
-          // 跨过零高度的隐藏围栏，不让光标困在代码块首尾。
-          { key: "ArrowLeft", run: (v) => navigateFence(v, "left") },
-          { key: "ArrowRight", run: (v) => navigateFence(v, "right") },
-          { key: "ArrowUp", run: (v) => navigateFence(v, "up") },
-          { key: "ArrowDown", run: (v) => navigateFence(v, "down") },
-          // 空标题整行只有 #，退格要直接拆掉，不能只去吃上一行的换行
-          { key: "Backspace", run: exitHeadingOnBackspace },
-          { key: "Delete", run: exitHeadingOnDelete },
-          // 空代码块再按删除：首尾围栏与空正文一次成对删掉
-          { key: "Backspace", run: deleteEmptyFence },
-          { key: "Backspace", run: exitListOnBackspace },
-          // 空引用行一次删整行；光标在引用正文开头时退一级引用，不再留下裸 >
-          { key: "Backspace", run: exitQuoteOnBackspace },
-          { key: "Delete", run: deleteEmptyFence },
-          // 非空块的围栏不能被误删成残片；源代码模式不拦截原始编辑
-          {
-            key: "Backspace",
-            run: (v) => (isSourceMode() ? false : protectFenceBackspace(v)),
-          },
-          {
-            key: "Delete",
-            run: (v) => (isSourceMode() ? false : protectFenceDelete(v)),
-          },
-          // 代码块内软缩进纯空白行首：Backspace 按缩进宽度整步回删
-          { key: "Backspace", run: (v) => outdentSoftTabOnBackspace(v, DEFAULT_INDENT_WIDTH, inCodeBlock) },
-          // 空配对里按退格删掉一对，别留个孤儿括号；Delete 对称，同样整对删除
-          { key: "Backspace", run: deletePair },
-          { key: "Delete", run: deletePairForward },
-          // 行内代码/强调的边界标记也成对删：删一侧时另一侧一起去掉（内容保留），
-          // 剩下的标记不会和后文的同类符号错配，把大段正文吞成行内代码
-          { key: "Backspace", run: (v) => deleteInlinePair(v, false) },
-          { key: "Delete", run: (v) => deleteInlinePair(v, true) },
-        ]),
-      ),
-      markdown({
-        base: markdownLanguage,
-        codeLanguages,
-        addKeymap: true,
-        // GFM 的裸 URL 自动链接（https://...、www....），Ctrl+点击才能打开
-        extensions: [Autolink],
-      }),
-      syntaxHighlighting(codeHighlight),
-      highlightSelectionMatches(),
-      search({ top: true }),
-      zhPhrases,
-      // 放在 blockDecorations 之前：后者初始化时要读它的值
-      sourceModeField,
-      blockViewportField,
-      editingImageField,
-      fenceDeletionGuard,
-      blockDecorations,
-      livePreview,
-      EditorView.lineWrapping,
-      placeholder("开始写点什么…"),
-      editingTheme,
-      keymap.of([
-        { key: "Mod-s", run: () => (save(), true) },
-        { key: "Mod-o", run: () => (openFile(), true) },
-        { key: "Mod-Shift-p", run: () => (quickOpen(), true) },
-        { key: "Mod-b", run: () => (wrap("**"), true) },
-        { key: "Mod-i", run: () => (wrap("*"), true) },
-        { key: "Mod-k", run: () => (insertLink(), true) },
-        { key: "Mod-Shift-k", run: () => (insertFence(), true) },
-        { key: "Mod-Shift-m", run: () => (insertMathBlock(), true) },
-        { key: "Mod-Shift-t", run: () => (run("table"), true) },
-        { key: "Mod-1", run: () => (setHeading(1), true) },
-        { key: "Mod-2", run: () => (setHeading(2), true) },
-        { key: "Mod-3", run: () => (setHeading(3), true) },
-        { key: "Mod-4", run: () => (setHeading(4), true) },
-        { key: "Mod-5", run: () => (setHeading(5), true) },
-        { key: "Mod-6", run: () => (setHeading(6), true) },
-        {
-          key: "Mod-0",
-          run: () => {
-            const lineText = view.state.doc.lineAt(view.state.selection.main.head).text;
-            if (/^\s{0,3}#{1,6}\s+/.test(lineText)) setHeading(0);
-            else resetFontSize();
-            return true;
-          },
-        },
-        { key: "Mod-=", run: () => (adjustFontSize(1), true) },
-        { key: "Mod-Shift-=", run: () => (adjustFontSize(1), true) },
-        { key: "Mod--", run: () => (adjustFontSize(-1), true) },
-        { key: "Mod-Shift-0", run: () => (resetFontSize(), true) },
-        { key: "Alt-ArrowLeft", run: () => (jumpBack(), true) },
-        { key: "Alt-ArrowRight", run: () => (jumpForward(), true) },
-        { key: "Mod-Shift-1", run: () => (showSide("outline"), true) },
-        { key: "Mod-Shift-e", run: () => (showSide("files"), true) },
-        { key: "Mod-Shift-f", run: () => (focusFileSearch(), true) },
-        { key: "Mod-n", run: () => (newDoc(), true) },
-        { key: "Mod-Shift-s", run: () => (saveAs(), true) },
-        { key: "Mod-p", run: () => (doExportPdf(), true) },
-        { key: "Mod-e", run: () => (wrap("`"), true) },
-        { key: "Mod-Shift-x", run: () => (wrap("~~"), true) },
-        // historyKeymap 里 Ctrl+Shift+Z 只是 mac 变体，Windows 上要自己补一条（Ctrl+Y 仍然可用）
-        { key: "Mod-Shift-z", run: () => (redo(view), true) },
-        // Ctrl+V 交给 Chromium 原生粘贴，纯文本走我们自己的实现（它会读到富文本/图片）
-        { key: "Mod-Shift-v", run: () => (run("paste-plain"), true) },
-        // 源代码模式：markdown 没有「注释」概念，Mod-/ 不会和 defaultKeymap 抢
-        { key: "Mod-/", run: () => (run("source-mode"), true) },
-        // 列表续行 / Tab 调层级在文件顶部用 Prec.high 绑定（要压过 markdown() 自带的 Enter）
-        { key: "F1", run: () => (run("shortcuts"), true) },
-        { key: "F8", run: () => (run("focus"), true) },
-        { key: "F9", run: () => (run("typewriter"), true) },
-        ...defaultKeymap,
-        ...searchKeymap,
-        ...historyKeymap,
-      ]),
-      EditorView.updateListener.of((u) => {
+    extensions: createEditorExtensions({
+      historySlot,
+      getDocState: () => state,
+      getDocView: () => view,
+      onFocus: () => focusPane("primary"),
+      onUpdate: (u) => {
         if (u.docChanged) {
           setDirty(true);
           scheduleAutosave();
-          scheduleOutline();
+          if (shell.activePane === "primary") scheduleOutline();
         }
-        if (u.docChanged || u.selectionSet) scheduleStatus();
+        if ((u.docChanged || u.selectionSet) && shell.activePane === "primary") scheduleStatus();
         if (u.selectionSet) {
           trackCursorJump(u);
           maybeTypewriter();
-          // 光标一动，大纲里的「当前章节」也该跟着换
-          requestAnimationFrame(() => syncOutlineCurrent());
+          if (shell.activePane === "primary") {
+            // 光标一动，大纲里的「当前章节」也该跟着换
+            requestAnimationFrame(() => syncOutlineCurrent());
+          }
           const fmt = document.getElementById("fmt-pop");
-          if (view.state.selection.main.empty) {
+          if (u.view.state.selection.main.empty) {
             if (fmt) fmt.hidden = true;
           } else if (fmt && !fmt.hidden) {
-            requestAnimationFrame(placeFmtPop);
+            requestAnimationFrame(() => placeFmtPop(u.view));
           }
         }
-      }),
-    ],
+      },
+    }),
   }),
 });
 
@@ -638,53 +688,58 @@ window.__plumeLoad = (content, pathOrName) => loadDoc(content, pathOrName);
 
 view.focus();
 
-let scrollFade = null;
-view.scrollDOM.addEventListener(
-  "scroll",
-  () => {
-    view.scrollDOM.classList.add("is-scrolling");
-    clearTimeout(scrollFade);
-    scrollFade = setTimeout(
-      () => view.scrollDOM.classList.remove("is-scrolling"),
-      700,
-    );
-    const fmt = document.getElementById("fmt-pop");
-    if (fmt) fmt.hidden = true;
-  },
-  { passive: true },
-);
-view.dom.addEventListener("mouseup", () => requestAnimationFrame(placeFmtPop));
+function bindViewScrollSync(targetView) {
+  let scrollFade = null;
+  targetView.scrollDOM.addEventListener(
+    "scroll",
+    () => {
+      targetView.scrollDOM.classList.add("is-scrolling");
+      clearTimeout(scrollFade);
+      scrollFade = setTimeout(
+        () => targetView.scrollDOM.classList.remove("is-scrolling"),
+        700,
+      );
+      const fmt = document.getElementById("fmt-pop");
+      if (fmt) fmt.hidden = true;
+    },
+    { passive: true },
+  );
+  targetView.dom.addEventListener("mouseup", () =>
+    requestAnimationFrame(() => placeFmtPop(targetView)),
+  );
 
-// 代码块不跟着整页折行。滚动其中一行时，同一块里的其它行跟着走，只在最后一行露出滚动条。
-view.dom.addEventListener(
-  "scroll",
-  (event) => {
-    const line = event.target;
-    if (!(line instanceof Element) || !line.classList.contains("cm-code-line")) return;
-    if (line.classList.contains("cm-fence-open") || line.classList.contains("cm-fence-close")) return;
-    const group = [line];
-    let node = line;
-    while (
-      (node = node.previousElementSibling) &&
-      node.classList.contains("cm-code-line") &&
-      !node.classList.contains("cm-fence-open")
-    ) {
-      group.push(node);
-    }
-    node = line;
-    while (
-      (node = node.nextElementSibling) &&
-      node.classList.contains("cm-code-line") &&
-      !node.classList.contains("cm-fence-close")
-    ) {
-      group.push(node);
-    }
-    for (const other of group) {
-      if (other !== line && other.scrollLeft !== line.scrollLeft) other.scrollLeft = line.scrollLeft;
-    }
-  },
-  true,
-);
+  // 代码块不跟着整页折行。滚动其中一行时，同一块里的其它行跟着走，只在最后一行露出滚动条。
+  targetView.dom.addEventListener(
+    "scroll",
+    (event) => {
+      const line = event.target;
+      if (!(line instanceof Element) || !line.classList.contains("cm-code-line")) return;
+      if (line.classList.contains("cm-fence-open") || line.classList.contains("cm-fence-close")) return;
+      const group = [line];
+      let node = line;
+      while (
+        (node = node.previousElementSibling) &&
+        node.classList.contains("cm-code-line") &&
+        !node.classList.contains("cm-fence-open")
+      ) {
+        group.push(node);
+      }
+      node = line;
+      while (
+        (node = node.nextElementSibling) &&
+        node.classList.contains("cm-code-line") &&
+        !node.classList.contains("cm-fence-close")
+      ) {
+        group.push(node);
+      }
+      for (const other of group) {
+        if (other !== line && other.scrollLeft !== line.scrollLeft) other.scrollLeft = line.scrollLeft;
+      }
+    },
+    true,
+  );
+}
+bindViewScrollSync(view);
 
 /* ---------------- 字号实时缩放与光标跳转历史 ---------------- */
 
@@ -811,14 +866,16 @@ function scheduleStatus() {
 }
 
 function updateStatus(extra) {
-  const text = view.state.doc.toString();
-  shell.setStatus({ words: countWords(text), lines: view.state.doc.lines });
+  const { view: av, state: as } = activeDocContext();
+  const text = av.state.doc.toString();
+  shell.setWordGoal(getWordGoal(as.path));
+  shell.setStatus({ words: countWords(text), lines: av.state.doc.lines });
   if (extra !== undefined) shell.setHint(extra);
 }
 
 /** 选区是否已被某对对称标记包裹（含标记在选区两侧的情形），用于格式条点亮按钮。 */
-function fmtActive(marker) {
-  const s = view.state;
+function fmtActive(marker, targetView = activeView()) {
+  const s = targetView.state;
   const sel = s.selection.main;
   if (sel.empty) return false;
   const text = s.sliceDoc(sel.from, sel.to);
@@ -836,38 +893,38 @@ function fmtActive(marker) {
 
 const FMT_MARKERS = { bold: "**", italic: "*", strike: "~~", code: "`", highlight: "==" };
 
-function syncFmtPopState(pop) {
+function syncFmtPopState(pop, targetView = activeView()) {
   for (const btn of pop.querySelectorAll("[data-fmt]")) {
     const marker = FMT_MARKERS[btn.dataset.fmt];
-    const on = marker ? fmtActive(marker) : false;
+    const on = marker ? fmtActive(marker, targetView) : false;
     btn.classList.toggle("is-on", on);
     btn.setAttribute("aria-pressed", on ? "true" : "false");
   }
 }
 
-function placeFmtPop() {
+function placeFmtPop(targetView = activeView()) {
   const pop = document.getElementById("fmt-pop");
-  if (!pop) return;
-  const sel = view.state.selection.main;
+  if (!pop || !targetView) return;
+  const sel = targetView.state.selection.main;
   const inCodeBlock =
     !sel.empty &&
-    getCodeFences(view.state).some(
+    getCodeFences(targetView.state).some(
       (block) =>
         !isFenceDraft(block) && sel.from >= block.from && sel.to <= block.to,
     );
-  if (sel.empty || !view.hasFocus || inCodeBlock) {
+  if (sel.empty || !targetView.hasFocus || inCodeBlock) {
     pop.hidden = true;
     return;
   }
-  const a = view.coordsAtPos(sel.from);
-  const b = view.coordsAtPos(sel.to);
+  const a = targetView.coordsAtPos(sel.from);
+  const b = targetView.coordsAtPos(sel.to);
   if (!a || !b) {
     pop.hidden = true;
     return;
   }
   pop.hidden = false;
-  syncFmtPopState(pop);
-  const host = view.scrollDOM.getBoundingClientRect();
+  syncFmtPopState(pop, targetView);
+  const host = targetView.scrollDOM.getBoundingClientRect();
   const left = Math.min(a.left, b.left);
   const top = Math.min(a.top, b.top);
   const width = pop.offsetWidth || 180;
@@ -912,17 +969,18 @@ function setWordGoalForDoc(goal, path = state.path) {
 }
 
 function renderStatsPop() {
-  const text = view.state.doc.toString();
+  const { view: av, state: as } = activeDocContext();
+  const text = av.state.doc.toString();
   const chars = text.length;
   const noWs = (text.match(/\S/g) || []).length;
   const words = countWords(text);
-  const lines = view.state.doc.lines;
+  const lines = av.state.doc.lines;
   const mins = words === 0 ? 0 : Math.max(1, Math.ceil(words / 400));
   const pop = document.getElementById("stats-pop");
   const row = (label, value) =>
     `<div class="stats-row"><span>${label}</span><b>${value}</b></div>`;
   const paras = countParagraphs(text);
-  const goal = getWordGoal(state.path);
+  const goal = getWordGoal(as.path);
   shell.setWordGoal(goal);
   const gp = computeWordGoalProgress(words, goal);
   const goalStatus = gp.goal
@@ -947,13 +1005,13 @@ function renderStatsPop() {
   const input = pop.querySelector("#stats-goal-input");
   if (input) {
     input.addEventListener("change", () => {
-      setWordGoalForDoc(input.value, state.path);
+      setWordGoalForDoc(input.value, as.path);
       renderStatsPop();
     });
     input.addEventListener("keydown", (ev) => {
       ev.stopPropagation();
       if (ev.key === "Enter") {
-        setWordGoalForDoc(input.value, state.path);
+        setWordGoalForDoc(input.value, as.path);
         renderStatsPop();
       }
     });
@@ -1033,6 +1091,13 @@ function scheduleDraft() {
   if (state.dirty) draftTimer = setTimeout(writeDraft, 700);
 }
 
+function syncWindowChrome() {
+  const { state: activeS } = activeDocContext();
+  const name = activeS.path ? activeS.path.split(/[\\/]/).pop() : "未命名.md";
+  window.studio?.setDirty(!!(state.dirty || splitState.dirty));
+  window.studio?.setTitle((activeS.dirty ? "• " : "") + name + " — Plume");
+}
+
 function setDirty(v, { preserveDraft = false } = {}) {
   state.dirty = v;
   // 变干净就把待落的自动保存和恢复草稿一起撤掉；启动初始化可选择保留上次草稿。
@@ -1043,9 +1108,7 @@ function setDirty(v, { preserveDraft = false } = {}) {
   } else scheduleDraft();
   shell.syncDoc({ path: state.path, dir: state.dir });
   shell.setDirty(v);
-  const name = state.path ? state.path.split(/[\\/]/).pop() : "未命名.md";
-  window.studio?.setDirty(v);
-  window.studio?.setTitle((v ? "• " : "") + name + " — Plume");
+  syncWindowChrome();
 }
 
 /** 打开另一篇文档前的统一出口：保存、明确放弃或取消，绝不静默覆盖。 */
@@ -1283,25 +1346,40 @@ async function createFsEntry(dir, directory) {
   }
 }
 
-function currentInsideEntry(entry) {
-  if (!state.path) return false;
-  if (samePath(state.path, entry.path)) return true;
+function pathInsideEntry(targetPath, entry) {
+  if (!targetPath) return false;
+  if (samePath(targetPath, entry.path)) return true;
   if (!entry.dir) return false;
   const norm = (p) => String(p).replace(/[\\/]+$/, "").toLowerCase();
-  return norm(state.path).startsWith(norm(entry.path) + "\\") || norm(state.path).startsWith(norm(entry.path) + "/");
+  return norm(targetPath).startsWith(norm(entry.path) + "\\") || norm(targetPath).startsWith(norm(entry.path) + "/");
+}
+
+function currentInsideEntry(entry) {
+  return pathInsideEntry(state.path, entry);
 }
 
 async function renameFsEntry(entry) {
   const name = await askText("重命名", entry.name);
   if (!name || name === entry.name) return;
   if (currentInsideEntry(entry) && !(await settleCurrentDocument())) return;
+  if (pathInsideEntry(splitState.path, entry) && !(await settleSplitDocument())) return;
   try {
     const oldPath = state.path;
+    const oldSplitPath = splitState.path;
     const renamed = await window.studio.renameFsEntry(state.dir, entry.path, name);
     if (currentInsideEntry(entry) && oldPath) {
       state.path = renamed + oldPath.slice(entry.path.length);
       window.studio?.watchDocument?.(state.path);
       setDirty(false);
+    }
+    if (pathInsideEntry(oldSplitPath, entry) && oldSplitPath) {
+      splitState.path = renamed + oldSplitPath.slice(entry.path.length);
+      splitState.dir = splitState.path.replace(/[\\/][^\\/]*$/, "");
+      shell.setSplitDoc(splitState.path);
+      if (splitView) {
+        splitView.dispatch({ effects: setDocBaseEffect.of(docBaseUrl(splitState.dir)) });
+      }
+      syncWindowChrome();
     }
     remapDocumentTabs(entry.path, renamed);
     syncTabs();
@@ -1318,11 +1396,19 @@ async function trashFsEntry(entry) {
     : window.confirm(`确定把「${entry.name}」移到回收站吗？`);
   if (!ok) return;
   const contained = currentInsideEntry(entry);
+  const splitContained = pathInsideEntry(splitState.path, entry);
   if (contained && !(await settleCurrentDocument())) return;
+  if (splitContained && !(await settleSplitDocument())) return;
   try {
     await window.studio.trashFsEntry(state.dir, entry.path);
+    if (splitContained) {
+      await closeSplit({ settle: false });
+    }
     if (contained) {
       loadDoc("", null);
+      removeDocumentTabsUnder(entry.path);
+      syncTabs();
+    } else if (splitContained) {
       removeDocumentTabsUnder(entry.path);
       syncTabs();
     }
@@ -1334,15 +1420,28 @@ async function trashFsEntry(entry) {
 }
 
 async function moveFsEntry(source, destDir) {
-  const contained = currentInsideEntry({ path: source, dir: true });
+  const sourceEntry = { path: source, dir: true };
+  const contained = currentInsideEntry(sourceEntry);
+  const splitContained = pathInsideEntry(splitState.path, sourceEntry);
   if (contained && !(await settleCurrentDocument())) return;
+  if (splitContained && !(await settleSplitDocument())) return;
   const oldPath = state.path;
+  const oldSplitPath = splitState.path;
   try {
     const moved = await window.studio.moveFsEntry(state.dir, source, destDir);
     if (contained && oldPath) {
       state.path = moved + oldPath.slice(source.length);
       window.studio?.watchDocument?.(state.path);
       setDirty(false);
+    }
+    if (splitContained && oldSplitPath) {
+      splitState.path = moved + oldSplitPath.slice(source.length);
+      splitState.dir = splitState.path.replace(/[\\/][^\\/]*$/, "");
+      shell.setSplitDoc(splitState.path);
+      if (splitView) {
+        splitView.dispatch({ effects: setDocBaseEffect.of(docBaseUrl(splitState.dir)) });
+      }
+      syncWindowChrome();
     }
     remapDocumentTabs(source, moved);
     syncTabs();
@@ -1370,6 +1469,11 @@ const { showContextMenu } = createContextMenu({ flash: (msg) => flash(msg) });
 
 
 async function openTreePath(path) {
+  if (splitState.path && samePath(path, splitState.path)) {
+    focusPane("split");
+    splitView?.focus();
+    return;
+  }
   if (!(await settleCurrentDocument())) return;
   try {
     const r = await window.studio.readFile(path);
@@ -1380,6 +1484,17 @@ async function openTreePath(path) {
 }
 
 async function openSearchedFile(hit) {
+  if (splitState.path && samePath(hit.path, splitState.path) && splitView) {
+    focusPane("split");
+    splitView.focus();
+    if (hit.line > 1) {
+      const line = splitView.state.doc.line(Math.min(hit.line, splitView.state.doc.lines));
+      const anchor = Math.min(line.to, line.from + Math.max(0, hit.col || 0));
+      splitView.dispatch({ selection: { anchor }, scrollIntoView: true });
+      blinkLine(splitView, line.from);
+    }
+    return;
+  }
   recordJumpOrigin();
   if (!(await settleCurrentDocument())) return;
   try {
@@ -1410,7 +1525,7 @@ function scheduleOutline() {
 
 /* 大纲条目（pos/parent），当前章节计算用；展示数据在 Pinia 里 */
 let outlineItems = [];
-let outlineSpyBound = false;
+const outlineSpyBoundViews = new WeakSet();
 let outlineMeasurePending = false;
 /** 折叠状态以 Pinia 为准（组件切换后调 refreshOutline 重算）。 */
 let outlineCollapsed = new Set();
@@ -1446,13 +1561,13 @@ function outlineMeta(items, keys) {
  * 光标在视口里时跟光标所在的那一节。只看视口顶的话，点最后一项时那一行
  * 到不了窗口顶（下面没有足够的正文把它顶上去），高亮会停在更上面的标题。
  */
-function currentHeadingIndex() {
-  const head = view.state.selection.main.head;
-  const scroller = view.scrollDOM;
+function currentHeadingIndex(targetView = activeView()) {
+  const head = targetView.state.selection.main.head;
+  const scroller = targetView.scrollDOM;
   const top = scroller.scrollTop;
   const bottom = top + scroller.clientHeight;
-  const max = view.state.doc.length;
-  const headBlock = view.lineBlockAt(Math.min(head, max));
+  const max = targetView.state.doc.length;
+  const headBlock = targetView.lineBlockAt(Math.min(head, max));
   const caretVisible = headBlock.bottom > top + 2 && headBlock.top < bottom - 2;
   if (caretVisible) {
     let cur = -1;
@@ -1466,7 +1581,7 @@ function currentHeadingIndex() {
   const atEnd = top + scroller.clientHeight >= scroller.scrollHeight - 2;
   const probe = atEnd ? bottom - 8 : top + 8;
   for (let i = 0; i < outlineItems.length; i++) {
-    const blk = view.lineBlockAt(Math.min(outlineItems[i].pos, max));
+    const blk = targetView.lineBlockAt(Math.min(outlineItems[i].pos, max));
     if (blk.top <= probe) cur = i;
     else break;
   }
@@ -1490,29 +1605,31 @@ function paintOutlineCurrent(cur) {
 function syncOutlineCurrent() {
   if (!outlineItems.length || outlineMeasurePending) return;
   if (!sidebarVisible() || sideView() !== "outline") return;
+  const av = activeView();
   outlineMeasurePending = true;
-  view.requestMeasure({
+  av.requestMeasure({
     read: () => {
       outlineMeasurePending = false;
-      return currentHeadingIndex();
+      return currentHeadingIndex(av);
     },
     write: (cur) => paintOutlineCurrent(cur),
   });
 }
 
-function bindOutlineSpy() {
-  if (outlineSpyBound) return;
-  outlineSpyBound = true;
-  view.scrollDOM.addEventListener("scroll", syncOutlineCurrent, {
+function bindOutlineSpy(targetView = activeView()) {
+  if (!targetView || outlineSpyBoundViews.has(targetView)) return;
+  outlineSpyBoundViews.add(targetView);
+  targetView.scrollDOM.addEventListener("scroll", syncOutlineCurrent, {
     passive: true,
   });
 }
 
 function renderOutline() {
+  const av = activeView();
   outlineCollapsed = new Set(
     Object.keys(shell.outlineCollapsed).filter((k) => shell.outlineCollapsed[k]),
   );
-  const items = buildOutline(view.state);
+  const items = buildOutline(av.state);
   const meta = outlineMeta(items, outlineKeys(items));
   outlineItems = items.map((it, i) => ({ pos: it.pos, parent: meta[i].parent }));
   shell.setOutline(
@@ -1526,28 +1643,29 @@ function renderOutline() {
       hidden: meta[i].hidden,
     })),
   );
-  bindOutlineSpy();
+  bindOutlineSpy(av);
   syncOutlineCurrent();
 }
 
 /** 大纲点击跳转（OutlinePanel 调用）：中间的标题放到正文区正中。 */
 function outlineJump(pos, index) {
-  recordJumpOrigin();
-  const isFirstLine = index === 0 && view.state.doc.lineAt(pos).number === 1;
+  const av = activeView();
+  if (av === view) recordJumpOrigin();
+  const isFirstLine = index === 0 && av.state.doc.lineAt(pos).number === 1;
   // 先聚焦再改选区，确保 CM 同步写入 DOM Selection；否则后聚焦时浏览器会按旧选区把滚动条拉回去。
-  view.contentDOM.focus({ preventScroll: true });
-  view.dispatch({
+  av.contentDOM.focus({ preventScroll: true });
+  av.dispatch({
     selection: { anchor: pos },
     effects: EditorView.scrollIntoView(pos, {
       y: index === 0 ? "start" : "center",
       yMargin: isFirstLine ? 80 : 56,
     }),
   });
-  unfoldCurrentHeading(view);
+  unfoldCurrentHeading(av);
   if (isFirstLine) {
-    view.scrollDOM.scrollTo({ top: 0 });
+    av.scrollDOM.scrollTo({ top: 0 });
   }
-  blinkLine(view, pos);
+  blinkLine(av, pos);
 }
 
 /* ---------------- 格式化命令 ---------------- */
@@ -1659,11 +1777,11 @@ function toggleWrapRange(state, range, marker) {
   }, spans);
 }
 
-function wrap(marker, markerEnd = marker) {
-  const { state: s } = view;
+function wrap(marker, markerEnd = marker, targetView = activeView()) {
+  const { state: s } = targetView;
   // 双字符对称标记（加粗 **、删除线 ~~、高亮 ==）支持再次点击取消。
   const toggleable = marker === markerEnd && marker.length === 2;
-  view.dispatch(
+  targetView.dispatch(
     s.changeByRange((range) => {
       const text = s.sliceDoc(range.from, range.to);
       if (!text && range.empty) {
@@ -1685,11 +1803,11 @@ function wrap(marker, markerEnd = marker) {
       return toggleable ? toggleWrapRange(s, range, marker) : wrapRange(s, range, marker, markerEnd);
     }),
   );
-  view.focus();
+  targetView.focus();
 }
 
-function applyLinePrefix(prefixFn) {
-  const { state: s } = view;
+function applyLinePrefix(prefixFn, targetView = activeView()) {
+  const { state: s } = targetView;
   const lines = new Set();
   for (const r of s.selection.ranges) {
     const a = s.doc.lineAt(r.from).number;
@@ -1720,20 +1838,20 @@ function applyLinePrefix(prefixFn) {
     ),
     s.selection.mainIndex,
   );
-  view.dispatch({ changes: changeSet, selection, scrollIntoView: true });
-  view.focus();
+  targetView.dispatch({ changes: changeSet, selection, scrollIntoView: true });
+  targetView.focus();
 }
 
-function setHeading(level) {
+function setHeading(level, targetView = activeView()) {
   applyLinePrefix((text) =>
     level === 0 ? text : "#".repeat(level) + " " + text,
-  );
+  targetView);
 }
 
-function insertLink() {
-  const { state: s } = view;
+function insertLink(targetView = activeView()) {
+  const { state: s } = targetView;
   const suffix = '](https://)';
-  view.dispatch(
+  targetView.dispatch(
     s.changeByRange((range) => {
       if (range.empty) {
         const text = '链接文字';
@@ -1747,21 +1865,21 @@ function insertLink() {
     }),
   );
   // 链接文字和 URL 都可能需要编辑，但默认先替换占位 URL 更顺手。
-  const labelEnd = view.state.selection.main.to;
-  if (view.state.sliceDoc(labelEnd, labelEnd + suffix.length) === suffix) {
-    view.dispatch({ selection: { anchor: labelEnd + 2, head: labelEnd + suffix.length - 1 } });
+  const labelEnd = targetView.state.selection.main.to;
+  if (targetView.state.sliceDoc(labelEnd, labelEnd + suffix.length) === suffix) {
+    targetView.dispatch({ selection: { anchor: labelEnd + 2, head: labelEnd + suffix.length - 1 } });
   }
-  view.focus();
+  targetView.focus();
 }
 
 /**
  * 选中文字后粘贴一个裸链接 → 直接变成 `[文字](链接)`（Typora 的行为）。
  * 只认「整段剪贴板就是一个 URL」，普通文本粘贴完全不受影响。
  */
-function linkifySelection(raw) {
+function linkifySelection(raw, targetView = activeView()) {
   const url = String(raw || '').trim();
   if (!/^(https?:\/\/|mailto:)\S+$/i.test(url)) return false;
-  const { state: s } = view;
+  const { state: s } = targetView;
   const sel = s.selection.main;
   if (sel.empty) return false;
   const label = s.sliceDoc(sel.from, sel.to);
@@ -1769,15 +1887,15 @@ function linkifySelection(raw) {
   // 选区本身就是 URL（插入链接后选中的 https:// 占位符、已有链接的地址）时，
   // 粘贴新 URL 应当直接替换地址。再包一层会变成 [https://](新地址) 的嵌套坏链接，永远打不开。
   if (/^(https?:\/\/|mailto:)\S*$/i.test(label.trim()) || /^www\.\S*$/i.test(label.trim())) {
-    view.dispatch({
+    targetView.dispatch({
       changes: { from: sel.from, to: sel.to, insert: url },
       selection: { anchor: sel.from + url.length },
     });
-    view.focus();
+    targetView.focus();
     return true;
   }
-  view.dispatch(s.changeByRange((range) => wrapRange(s, range, '[', `](${url})`)));
-  view.focus();
+  targetView.dispatch(s.changeByRange((range) => wrapRange(s, range, '[', `](${url})`)));
+  targetView.focus();
   return true;
 }
 
@@ -1797,19 +1915,19 @@ function remoteImageUrl(raw) {
 }
 
 /** 裸图片 URL 粘贴为 Markdown 图片；独占一行时由现有块级 widget 立即显示预览。 */
-function pasteRemoteImage(raw, { sourceMode = false } = {}) {
+function pasteRemoteImage(raw, { sourceMode = false } = {}, targetView = activeView()) {
   const url = remoteImageUrl(raw);
-  const sel = view.state.selection.main;
-  if (!url || sourceMode || view.state.readOnly || !sel.empty) return false;
+  const sel = targetView.state.selection.main;
+  if (!url || sourceMode || targetView.state.readOnly || !sel.empty) return false;
   // 代码、链接地址和图片地址里应当粘贴 URL 原文，不能嵌套出坏 Markdown。
-  for (let n = syntaxTree(view.state).resolveInner(sel.head, -1); n; n = n.parent) {
+  for (let n = syntaxTree(targetView.state).resolveInner(sel.head, -1); n; n = n.parent) {
     if (["FencedCode", "CodeBlock", "CodeText", "InlineCode", "Link", "Image", "Autolink", "HTMLTag"].includes(n.name)) {
       return false;
     }
   }
   // 尖括号兼容中文、空格等非 ASCII/特殊字符；<> 本身必须编码，避免截断地址。
   const dest = url.replace(/</g, "%3C").replace(/>/g, "%3E");
-  insertAtCursor(`![](<${dest}>)`);
+  insertAtCursor(`![](<${dest}>)`, undefined, targetView);
   return true;
 }
 
@@ -1820,21 +1938,21 @@ function pasteRemoteImage(raw, { sourceMode = false } = {}) {
  *   3. 一段代码（SQL / 程序）→ 带语言标记的围栏代码块
  * 都不适用就返回 false，让 CM 按普通文本粘。菜单里的「粘贴」也走这里，两条路径行为一致。
  */
-function handlePastedText(text) {
+function handlePastedText(text, targetView = activeView()) {
   if (!text) return false;
-  if (view.hasFocus && linkifySelection(text)) return true;
-  const sourceMode = !!view.state.field(sourceModeField, false);
-  if (pasteRemoteImage(text, { sourceMode })) return true;
-  return pasteAsCodeBlock(view, text, { sourceMode });
+  if (targetView.hasFocus && linkifySelection(text, targetView)) return true;
+  const sourceMode = !!targetView.state.field(sourceModeField, false);
+  if (pasteRemoteImage(text, { sourceMode }, targetView)) return true;
+  return pasteAsCodeBlock(targetView, text, { sourceMode });
 }
 
 /**
  * 按导出时那套 slug 规则，找出 `#锚点` 落在哪个标题上。
  * 复用 slugify 而不是另写一份：导出的目录能跳，编辑器里 Ctrl+点击也得能跳到同一处。
  */
-function headingPosBySlug(slug) {
+function headingPosBySlug(slug, targetView = activeView()) {
   const used = new Set();
-  for (const h of buildOutline(view.state)) {
+  for (const h of buildOutline(targetView.state)) {
     if (slugify(h.text, used) === slug) return h.pos;
   }
   return -1;
@@ -2429,8 +2547,8 @@ function imageContextItems(el) {
  * 正文右键菜单：照 Typora 的段落面板排——图标行 + 多列按钮网格 + 分组的二级菜单，
  * 而不是二十多项排成一长条。命令都走 commands 表，和快捷键、菜单栏保持同一套行为。
  */
-function baseEditorContextItems() {
-  const empty = view.state.selection.main.empty;
+function baseEditorContextItems(targetView = activeView()) {
+  const empty = targetView.state.selection.main.empty;
   return [
     {
       grid: [
@@ -2441,7 +2559,7 @@ function baseEditorContextItems() {
           icon: "trash",
           title: "删除所选",
           disabled: empty,
-          action: () => view.dispatch(view.state.replaceSelection("")),
+          action: () => targetView.dispatch(targetView.state.replaceSelection("")),
         },
       ],
     },
@@ -2499,7 +2617,7 @@ function baseEditorContextItems() {
   ];
 }
 
-function openLink(href) {
+function openLink(href, targetView = activeView()) {
   let url = String(href || "").trim();
   if (!url) return false;
   // GFM autolink 的 www.example.com 没有协议，补成 https 再交给系统浏览器。
@@ -2511,12 +2629,12 @@ function openLink(href) {
     } catch {
       /* 非法的 % 序列就按原样比 */
     }
-    const pos = headingPosBySlug(slug);
+    const pos = headingPosBySlug(slug, targetView);
     if (pos < 0) return false;
-    recordJumpOrigin();
-    const isFirstLine = view.state.doc.lineAt(pos).number === 1;
-    view.contentDOM.focus({ preventScroll: true });
-    view.dispatch({
+    if (targetView === view) recordJumpOrigin();
+    const isFirstLine = targetView.state.doc.lineAt(pos).number === 1;
+    targetView.contentDOM.focus({ preventScroll: true });
+    targetView.dispatch({
       selection: { anchor: pos },
       effects: EditorView.scrollIntoView(pos, {
         y: "start",
@@ -2524,7 +2642,7 @@ function openLink(href) {
       }),
     });
     if (isFirstLine) {
-      view.scrollDOM.scrollTo({ top: 0 });
+      targetView.scrollDOM.scrollTo({ top: 0 });
     }
     return true;
   }
@@ -2539,49 +2657,11 @@ function openLink(href) {
   return false;
 }
 
-// 编辑区上下文菜单：按图片、表格、链接和普通文本分别给出可用操作。
-view.dom.addEventListener("contextmenu", (e) => {
-  const target = e.target instanceof Element ? e.target : null;
-  if (!target || target.closest(".cm-cell-editor, .cm-image-url")) return;
-  const image = target.closest(".cm-image");
-  if (image && view.dom.contains(image)) {
-    showContextMenu(e, imageContextItems(image));
-    return;
-  }
-  const cell = target.closest("td, th");
-  const table = target.closest(".cm-table-wrap");
-  if (cell && table && view.dom.contains(table)) {
-    showContextMenu(e, tableContextItems(table, cell));
-    return;
-  }
-  const link = target.closest(".cm-link");
-  if (link && view.dom.contains(link)) {
-    const href = link.dataset.href || "";
-    showContextMenu(e, [
-      { label: "打开链接", action: () => openLink(href) },
-      { label: "复制链接地址", action: () => copyText(href, "链接地址已复制") },
-      { separator: true },
-      ...baseEditorContextItems(),
-    ]);
-    return;
-  }
-  // 无选区（或右键落在选区之外）时，先将光标移到点击位置再弹菜单
-  const clickPos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-  if (clickPos != null) {
-    const main = view.state.selection.main;
-    const insideSel = !main.empty && clickPos >= main.from && clickPos <= main.to;
-    if (!insideSel) {
-      view.dispatch({ selection: { anchor: clickPos } });
-    }
-  }
-  showContextMenu(e, baseEditorContextItems());
-});
-
 // 点击位置对应的链接地址。活动行会把链接展开成 [文字](地址) 源码，
 // 这时 DOM 上没有 .cm-link，就按语法树把地址找出来。
-function linkHrefAt(pos) {
-  const doc = view.state.doc;
-  for (let n = syntaxTree(view.state).resolveInner(pos, 1); n; n = n.parent) {
+function linkHrefAt(pos, targetView = activeView()) {
+  const doc = targetView.state.doc;
+  for (let n = syntaxTree(targetView.state).resolveInner(pos, 1); n; n = n.parent) {
     if (n.name === "Image") return ""; // 图片地址不当网页打开
     if (n.name === "URL") return doc.sliceString(n.from, n.to);
     if (n.name === "Link" || n.name === "Autolink") {
@@ -2596,62 +2676,106 @@ function linkHrefAt(pos) {
   return "";
 }
 
-// Ctrl / Cmd + 点击正文里的链接。按住修饰键时才拦截，
-// 否则连「点一下把光标放进去」都没法做。
-view.contentDOM.addEventListener("mousedown", (e) => {
-  if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
-  const el = e.target instanceof Element ? e.target.closest(".cm-link") : null;
-  if (el) {
+function bindViewInteractions(targetView, paneName) {
+  // 编辑区上下文菜单：按图片、表格、链接和普通文本分别给出可用操作。
+  targetView.dom.addEventListener("contextmenu", (e) => {
+    focusPane(paneName);
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target || target.closest(".cm-cell-editor, .cm-image-url")) return;
+    if (targetView === view) {
+      const image = target.closest(".cm-image");
+      if (image && targetView.dom.contains(image)) {
+        showContextMenu(e, imageContextItems(image));
+        return;
+      }
+      const cell = target.closest("td, th");
+      const table = target.closest(".cm-table-wrap");
+      if (cell && table && targetView.dom.contains(table)) {
+        showContextMenu(e, tableContextItems(table, cell));
+        return;
+      }
+    }
+    const link = target.closest(".cm-link");
+    if (link && targetView.dom.contains(link)) {
+      const href = link.dataset.href || "";
+      showContextMenu(e, [
+        { label: "打开链接", action: () => openLink(href, targetView) },
+        { label: "复制链接地址", action: () => copyText(href, "链接地址已复制") },
+        { separator: true },
+        ...baseEditorContextItems(targetView),
+      ]);
+      return;
+    }
+    // 无选区（或右键落在选区之外）时，先将光标移到点击位置再弹菜单
+    const clickPos = targetView.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (clickPos != null) {
+      const main = targetView.state.selection.main;
+      const insideSel = !main.empty && clickPos >= main.from && clickPos <= main.to;
+      if (!insideSel) {
+        targetView.dispatch({ selection: { anchor: clickPos } });
+      }
+    }
+    showContextMenu(e, baseEditorContextItems(targetView));
+  });
+
+  // Ctrl / Cmd + 点击正文里的链接。按住修饰键时才拦截，
+  // 否则连「点一下把光标放进去」都没法做。
+  targetView.contentDOM.addEventListener("mousedown", (e) => {
+    if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return;
+    const el = e.target instanceof Element ? e.target.closest(".cm-link") : null;
+    if (el) {
+      e.preventDefault();
+      e.stopPropagation();
+      openLink(el.dataset.href || "", targetView);
+      return;
+    }
+    // 链接所在行正在编辑（显示源码）时也能 Ctrl+点击打开
+    const pos = targetView.posAtCoords({ x: e.clientX, y: e.clientY });
+    if (pos == null) return;
+    const href = linkHrefAt(pos, targetView);
+    if (!href) return;
     e.preventDefault();
     e.stopPropagation();
-    openLink(el.dataset.href || "");
-    return;
-  }
-  // 链接所在行正在编辑（显示源码）时也能 Ctrl+点击打开
-  const pos = view.posAtCoords({ x: e.clientX, y: e.clientY });
-  if (pos == null) return;
-  const href = linkHrefAt(pos);
-  if (!href) return;
-  e.preventDefault();
-  e.stopPropagation();
-  openLink(href);
-});
+    openLink(href, targetView);
+  });
 
-// 点到正文最后一行下面的空白，光标落到最后一行，不必刚好点在那一行上。
-view.dom.addEventListener("mousedown", (e) => {
-  if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
-  const target = e.target;
-  if (!(target instanceof Element)) return;
-  if (
-    target.closest(
-      ".cm-lang-badge, .cm-fence-copy, .cm-fence-chip, button, a, input, textarea",
+  // 点到正文最后一行下面的空白，光标落到最后一行，不必刚好点在那一行上。
+  targetView.dom.addEventListener("mousedown", (e) => {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (
+      target.closest(
+        ".cm-lang-badge, .cm-fence-copy, .cm-fence-chip, button, a, input, textarea",
+      )
     )
-  )
-    return;
-  const last = view.contentDOM.lastElementChild;
-  if (!last) return;
-  const sc = view.scrollDOM.getBoundingClientRect();
-  if (
-    e.clientX < sc.left ||
-    e.clientX > sc.right ||
-    e.clientY < sc.top ||
-    e.clientY > sc.bottom
-  )
-    return;
-  if (e.clientY <= last.getBoundingClientRect().bottom) return;
-  e.preventDefault();
-  view.dispatch({ selection: { anchor: view.state.doc.length } });
-  view.focus();
-});
+      return;
+    const last = targetView.contentDOM.lastElementChild;
+    if (!last) return;
+    const sc = targetView.scrollDOM.getBoundingClientRect();
+    if (
+      e.clientX < sc.left ||
+      e.clientX > sc.right ||
+      e.clientY < sc.top ||
+      e.clientY > sc.bottom
+    )
+      return;
+    if (e.clientY <= last.getBoundingClientRect().bottom) return;
+    e.preventDefault();
+    targetView.dispatch({ selection: { anchor: targetView.state.doc.length } });
+    targetView.focus();
+  });
+}
+bindViewInteractions(view, "primary");
 
-function insertAtCursor(text, selectOffset) {
-  const range = view.state.selection.main;
-  view.dispatch({
+function insertAtCursor(text, selectOffset, targetView = activeView()) {
+  const range = targetView.state.selection.main;
+  targetView.dispatch({
     changes: { from: range.from, to: range.to, insert: text },
     selection: { anchor: range.from + (selectOffset ?? text.length) },
     scrollIntoView: true,
   });
-  view.focus();
+  targetView.focus();
 }
 
 /** 光标是否落在围栏/缩进代码块里——代码块里的 `- ` `> ` 是内容，不是标记 */
@@ -2689,23 +2813,23 @@ function newlineAfterLazyQuote(view) {
   return true;
 }
 
-function insertFence() {
-  const sel = view.state.sliceDoc(
-    view.state.selection.main.from,
-    view.state.selection.main.to,
+function insertFence(targetView = activeView()) {
+  const sel = targetView.state.sliceDoc(
+    targetView.state.selection.main.from,
+    targetView.state.selection.main.to,
   );
   const body = sel || "// 代码";
-  insertAtCursor("```js\n" + body + "\n```\n", body.length + 6);
+  insertAtCursor("```js\n" + body + "\n```\n", body.length + 6, targetView);
 }
 
-function insertMathBlock() {
-  insertAtCursor("$$\n\\int_{0}^{1} x^2\\,dx = \\frac{1}{3}\n$$\n", 3);
+function insertMathBlock(targetView = activeView()) {
+  insertAtCursor("$$\n\\int_{0}^{1} x^2\\,dx = \\frac{1}{3}\n$$\n", 3, targetView);
 }
 
 /** 插入表格时选择器的弹出位置：贴着光标下方；拿不到坐标就退到窗口中心。 */
-function insertAnchorAtCaret() {
+function insertAnchorAtCaret(targetView = activeView()) {
   try {
-    const c = view.coordsAtPos(view.state.selection.main.from);
+    const c = targetView.coordsAtPos(targetView.state.selection.main.from);
     if (c && Number.isFinite(c.left) && Number.isFinite(c.bottom)) {
       return { x: c.left, y: c.bottom };
     }
@@ -2720,14 +2844,15 @@ let lastTableSize = { cols: 3, rows: 2 };
 
 /** 打开「几行几列」选择器；尺寸确认后按光标位置插入。 */
 function pickTableSize() {
+  const av = activeView();
   openTablePicker({
-    anchor: insertAnchorAtCaret(),
+    anchor: insertAnchorAtCaret(av),
     initial: lastTableSize,
     onPick: ({ cols, rows }) => {
       lastTableSize = { cols, rows };
-      insertTable(cols, rows);
+      insertTable(cols, rows, av);
     },
-    onClose: () => view.focus(),
+    onClose: () => av.focus(),
   });
 }
 
@@ -2736,39 +2861,39 @@ function pickTableSize() {
  * 中间，前后各补换行把段落切开，避免源码和表格粘在同一行；
  * 插完把光标放进第一个表头格，直接打字即可填写。
  */
-function insertTable(cols = 3, rows = 2) {
+function insertTable(cols = 3, rows = 2, targetView = activeView()) {
   const md = buildTableMarkdown(cols, rows);
-  const { state } = view;
-  const range = state.selection.main;
-  const startLine = state.doc.lineAt(range.from);
-  const endLine = state.doc.lineAt(range.to);
+  const { state: s } = targetView;
+  const range = s.selection.main;
+  const startLine = s.doc.lineAt(range.from);
+  const endLine = s.doc.lineAt(range.to);
   const prefix = startLine.text.slice(0, range.from - startLine.from).trim() ? "\n\n" : "";
   const suffix = endLine.text.slice(range.to - endLine.from).trim() ? "\n" : "";
   const from = range.from;
-  view.dispatch({
+  targetView.dispatch({
     changes: { from, to: range.to, insert: prefix + md + suffix },
     // 「| 」之后就是第一个空表头格
     selection: { anchor: from + prefix.length + 2 },
     scrollIntoView: true,
   });
-  view.focus();
+  targetView.focus();
 }
 
-function insertHr() {
-  insertAtCursor("\n\n---\n\n");
+function insertHr(targetView = activeView()) {
+  insertAtCursor("\n\n---\n\n", undefined, targetView);
 }
 
 // [toc] 必须独占一行才会被渲染成目录，所以前后都补空行
-function insertToc() {
-  insertAtCursor("\n\n[toc]\n\n");
+function insertToc(targetView = activeView()) {
+  insertAtCursor("\n\n[toc]\n\n", undefined, targetView);
 }
 
 /**
  * 列表 / 引用的行前缀开关：选中的行全都有这个前缀就去掉，否则统一加上。
  * 「全都有才去掉」比「逐行取反」更接近菜单里的心理预期（一般是想整段加上或整体取消）。
  */
-function toggleLinePrefix(prefixFn) {
-  const { state: s } = view;
+function toggleLinePrefix(prefixFn, targetView = activeView()) {
+  const { state: s } = targetView;
   const lines = new Set();
   for (const r of s.selection.ranges) {
     const a = s.doc.lineAt(r.from).number;
@@ -2814,8 +2939,8 @@ function toggleLinePrefix(prefixFn) {
     ),
     s.selection.mainIndex,
   );
-  view.dispatch({ changes: changeSet, selection, scrollIntoView: true });
-  view.focus();
+  targetView.dispatch({ changes: changeSet, selection, scrollIntoView: true });
+  targetView.focus();
 }
 
 const quotePrefix = {
@@ -2869,6 +2994,357 @@ const {
 
 /* ---------------- 多标签页与磁盘读写（已抽离至 tabs.js / file-io.js） ---------------- */
 
+function focusPane(pane) {
+  const next = pane === "split" && splitState.path ? "split" : "primary";
+  if (shell.activePane === next) return;
+  shell.setActivePane(next);
+  updateStatus();
+  renderOutline();
+  syncWindowChrome();
+}
+
+function setSplitDirty(v) {
+  splitState.dirty = !!v;
+  if (!splitState.dirty) clearTimeout(splitAutosaveTimer);
+  shell.setSplitDirty(splitState.dirty);
+  syncWindowChrome();
+}
+
+function scheduleSplitAutosave() {
+  if (!splitState.autosave || !splitState.path || !window.studio) return;
+  clearTimeout(splitAutosaveTimer);
+  splitAutosaveTimer = setTimeout(async () => {
+    if (!splitState.dirty || !splitState.path || !splitView) return;
+    const targetPath = splitState.path;
+    const content = splitView.state.doc.toString();
+    try {
+      await window.studio.saveFile(targetPath, serializeForDisk(content, splitState), splitState.encoding);
+      if (splitState.path === targetPath && splitView?.state.doc.toString() === content) {
+        setSplitDirty(false);
+        flash("已自动保存");
+      } else {
+        setSplitDirty(true);
+        scheduleSplitAutosave();
+      }
+    } catch (e) {
+      shell.setSaveError(String(e?.message || e));
+      flash("分栏文档自动保存失败");
+    }
+  }, 1200);
+}
+
+async function saveSplit() {
+  if (!splitView || !splitState.path) return true;
+  const content = splitView.state.doc.toString();
+  if (!window.studio) {
+    browserDownload(splitState.path.split(/[\\/]/).pop() || "未命名.md", serializeForDisk(content, splitState), "text/markdown");
+    setSplitDirty(false);
+    return true;
+  }
+  const targetPath = splitState.path;
+  await window.studio.saveFile(targetPath, serializeForDisk(content, splitState), splitState.encoding);
+  if (splitState.path === targetPath && splitView?.state.doc.toString() === content) {
+    setSplitDirty(false);
+    flash("已保存 " + targetPath.split(/[\\/]/).pop());
+  }
+  return true;
+}
+
+async function settleSplitDocument() {
+  if (!splitState.path || !splitState.dirty) return true;
+  if (!splitView || !splitView.state.doc.toString().trim()) return true;
+  let choice = "cancel";
+  if (window.studio?.unsaved) choice = await window.studio.unsaved();
+  else if (window.confirm("右侧分栏文档有未保存的更改。确定先保存并继续吗？")) choice = "save";
+  if (choice === "cancel") return false;
+  if (choice === "discard") return true;
+  try {
+    return await saveSplit();
+  } catch (err) {
+    flash("保存失败，已取消关闭分栏：" + (err?.message || err));
+    return false;
+  }
+}
+
+function applySplitRatio(ratio) {
+  const clamped = Math.max(0.2, Math.min(0.8, Number(ratio) || 0.5));
+  const area = document.getElementById("editor-area");
+  if (area) area.style.setProperty("--split-ratio", String(clamped));
+  return clamped;
+}
+
+function bindSplitDivider() {
+  const saved = Number(localStorage.getItem(SPLIT_RATIO_KEY));
+  if (Number.isFinite(saved) && saved >= 0.2 && saved <= 0.8) applySplitRatio(saved);
+  const divider = document.getElementById("split-divider");
+  const area = document.getElementById("editor-area");
+  if (!divider || !area || divider.dataset.bound) return;
+  divider.dataset.bound = "1";
+  divider.addEventListener("dblclick", () => {
+    const r = applySplitRatio(0.5);
+    try {
+      localStorage.setItem(SPLIT_RATIO_KEY, String(r));
+    } catch {
+      /* ignore */
+    }
+  });
+  divider.addEventListener("mousedown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    document.body.classList.add("split-dragging");
+    const rect = area.getBoundingClientRect();
+    const move = (ev) => {
+      if (rect.width <= 0) return;
+      const r = applySplitRatio((ev.clientX - rect.left) / rect.width);
+      area.dataset.splitRatio = String(r);
+    };
+    const up = () => {
+      document.body.classList.remove("split-dragging");
+      try {
+        if (area.dataset.splitRatio) localStorage.setItem(SPLIT_RATIO_KEY, area.dataset.splitRatio);
+      } catch {
+        /* ignore */
+      }
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  });
+}
+
+async function readDocForSplit(path) {
+  if (window.studio?.readFile) return window.studio.readFile(path);
+  const cached = tabs.documentTabs.find((t) => samePath(t.path, path) && t.editorState);
+  if (cached) return { path, content: cached.editorState.doc.toString(), encoding: "utf-8" };
+  throw new Error("当前环境无法读取文件");
+}
+
+function mountOrUpdateSplitView(text, nextBase, sourceOn) {
+  const splitHost = document.getElementById("split-editor-host");
+  if (!splitHost) return false;
+  if (!splitView) {
+    splitHistorySlot = new Compartment();
+    splitView = new EditorView({
+      parent: splitHost,
+      state: EditorState.create({
+        doc: text,
+        extensions: createEditorExtensions({
+          historySlot: splitHistorySlot,
+          getDocState: () => splitState,
+          getDocView: () => splitView,
+          onFocus: () => focusPane("split"),
+          onUpdate: (u) => {
+            if (u.docChanged) {
+              setSplitDirty(true);
+              scheduleSplitAutosave();
+              if (shell.activePane === "split") scheduleOutline();
+            }
+            if ((u.docChanged || u.selectionSet) && shell.activePane === "split") scheduleStatus();
+            if (u.selectionSet) {
+              if (shell.activePane === "split") {
+                requestAnimationFrame(() => syncOutlineCurrent());
+              }
+              const fmt = document.getElementById("fmt-pop");
+              if (u.view.state.selection.main.empty) {
+                if (fmt) fmt.hidden = true;
+              } else if (fmt && !fmt.hidden) {
+                requestAnimationFrame(() => placeFmtPop(u.view));
+              }
+            }
+          },
+        }),
+      }),
+    });
+    splitView.dispatch({
+      effects: [setDocBaseEffect.of(nextBase), setSourceMode.of(sourceOn)],
+    });
+    bindViewScrollSync(splitView);
+    bindViewInteractions(splitView, "split");
+    bindThemeEditorView(splitView);
+  } else {
+    splitView.dispatch({ effects: splitHistorySlot.reconfigure([]) });
+    splitView.dispatch({
+      changes: { from: 0, to: splitView.state.doc.length, insert: text },
+      selection: { anchor: 0 },
+      scrollIntoView: true,
+      effects: [
+        splitHistorySlot.reconfigure(history()),
+        setDocBaseEffect.of(nextBase),
+        setSourceMode.of(sourceOn),
+      ],
+      annotations: Transaction.addToHistory.of(false),
+    });
+  }
+  if (splitView.contentDOM) splitView.contentDOM.spellcheck = !!getAppearance().spellcheck;
+  bindSplitDivider();
+  return true;
+}
+
+async function openSplit(path, { focus = true } = {}) {
+  if (!path) return false;
+  if (samePath(path, state.path)) {
+    flash("当前文件已在主编辑区打开，请选择其他文件进行分栏");
+    return false;
+  }
+  if (splitState.path && samePath(path, splitState.path)) {
+    if (focus) {
+      focusPane("split");
+      splitView?.focus();
+    }
+    return true;
+  }
+  if (!(await settleSplitDocument())) return false;
+  let docRes;
+  try {
+    docRes = await readDocForSplit(path);
+  } catch (err) {
+    flash("分栏打开失败：" + (err?.message || err));
+    return false;
+  }
+  Object.assign(splitState, detectDocFormat(docRes.content));
+  splitState.path = path;
+  splitState.dir = path.replace(/[\\/][^\\/]*$/, "");
+  splitState.encoding = String(docRes.encoding || "utf-8").toLowerCase();
+  splitState.dirty = false;
+  clearTimeout(splitAutosaveTimer);
+  shell.setSplitDoc(path);
+  shell.setSplitDirty(false);
+  tabs.ensureTab(path);
+
+  await nextTick();
+  if (!splitState.path || !samePath(splitState.path, path)) return false;
+
+  const text = withTrailingBlank(normalizeMarkdownText(docRes.content));
+  const nextBase = window.studio ? docBaseUrl(splitState.dir) : null;
+  const sourceOn = !!view.state.field(sourceModeField, false);
+  if (!mountOrUpdateSplitView(text, nextBase, sourceOn)) return false;
+  if (focus) {
+    focusPane("split");
+    splitView.focus();
+  } else {
+    syncWindowChrome();
+  }
+  return true;
+}
+
+async function closeSplit({ settle = true } = {}) {
+  if (!splitState.path) return true;
+  if (settle && !(await settleSplitDocument())) return false;
+  clearTimeout(splitAutosaveTimer);
+  if (splitView) {
+    unbindThemeEditorView(splitView);
+    splitView.destroy();
+    splitView = null;
+  }
+  splitHistorySlot = null;
+  splitState.path = null;
+  splitState.dir = null;
+  splitState.dirty = false;
+  splitState.eol = "\n";
+  splitState.bom = false;
+  splitState.encoding = "utf-8";
+  shell.setSplitDoc(null);
+  tabs.syncTabs();
+  focusPane("primary");
+  syncWindowChrome();
+  view.focus();
+  return true;
+}
+
+async function promoteSplitToPrimary() {
+  if (!splitState.path || !splitView) return false;
+  const nextPath = splitState.path;
+  const nextText = splitView.state.doc.toString();
+  const nextDirty = splitState.dirty;
+  const nextMeta = { eol: splitState.eol, bom: splitState.bom, encoding: splitState.encoding };
+  const nextSel = splitView.state.selection.main;
+  const nextScroll = splitView.scrollDOM.scrollTop;
+  await closeSplit({ settle: false });
+  loadDoc(nextText, nextPath, { snapshotOld: false });
+  Object.assign(state, nextMeta);
+  view.dispatch({
+    selection: {
+      anchor: Math.min(nextSel.anchor, view.state.doc.length),
+      head: Math.min(nextSel.head, view.state.doc.length),
+    },
+  });
+  requestAnimationFrame(() => {
+    view.scrollDOM.scrollTop = nextScroll;
+  });
+  setDirty(nextDirty);
+  view.focus();
+  return true;
+}
+
+async function swapSplit() {
+  if (!splitState.path || !splitView) return false;
+  if (!state.path) {
+    flash("未保存的空白文档无法移到分栏，请先保存");
+    return false;
+  }
+  const left = {
+    path: state.path,
+    text: view.state.doc.toString(),
+    dirty: state.dirty,
+    eol: state.eol,
+    bom: state.bom,
+    encoding: state.encoding,
+    sel: view.state.selection.main,
+    scroll: view.scrollDOM.scrollTop,
+  };
+  const right = {
+    path: splitState.path,
+    text: splitView.state.doc.toString(),
+    dirty: splitState.dirty,
+    eol: splitState.eol,
+    bom: splitState.bom,
+    encoding: splitState.encoding,
+    sel: splitView.state.selection.main,
+    scroll: splitView.scrollDOM.scrollTop,
+  };
+  // 先清空 splitPath 再加载主编辑区，避免 snapshot/sync 冲突
+  splitState.path = right.path;
+  loadDoc(right.text, right.path, { snapshotOld: false });
+  Object.assign(state, { eol: right.eol, bom: right.bom, encoding: right.encoding });
+  setDirty(right.dirty);
+  view.dispatch({
+    selection: {
+      anchor: Math.min(right.sel.anchor, view.state.doc.length),
+      head: Math.min(right.sel.head, view.state.doc.length),
+    },
+  });
+
+  Object.assign(splitState, {
+    path: left.path,
+    dir: left.path.replace(/[\\/][^\\/]*$/, ""),
+    dirty: left.dirty,
+    eol: left.eol,
+    bom: left.bom,
+    encoding: left.encoding,
+  });
+  shell.setSplitDoc(left.path);
+  shell.setSplitDirty(left.dirty);
+  const nextBase = window.studio ? docBaseUrl(splitState.dir) : null;
+  const sourceOn = !!view.state.field(sourceModeField, false);
+  mountOrUpdateSplitView(left.text, nextBase, sourceOn);
+  splitView.dispatch({
+    selection: {
+      anchor: Math.min(left.sel.anchor, splitView.state.doc.length),
+      head: Math.min(left.sel.head, splitView.state.doc.length),
+    },
+  });
+  requestAnimationFrame(() => {
+    view.scrollDOM.scrollTop = right.scroll;
+    if (splitView) splitView.scrollDOM.scrollTop = left.scroll;
+  });
+  tabs.syncTabs();
+  updateStatus();
+  renderOutline();
+  syncWindowChrome();
+  return true;
+}
+
 const tabsEnabled = !new URLSearchParams(location.search).has("selftest");
 let fileIO = null;
 const tabs = createTabsManager({
@@ -2881,6 +3357,14 @@ const tabs = createTabsManager({
   loadDoc: (c, p, opts) => fileIO.loadDoc(c, p, opts),
   flash: (msg) => flash(msg),
   tabsEnabled,
+  getSplitPath: () => splitState.path,
+  onBeforeCloseSplit: () => closeSplit({ settle: true }),
+  onPromoteSplit: () => promoteSplitToPrimary(),
+  onFocusPane: (pane) => {
+    focusPane(pane);
+    (pane === "split" ? splitView : view)?.focus();
+  },
+  onRestoreSplit: (p) => openSplit(p, { focus: false }),
 });
 fileIO = createFileIO({
   state,
@@ -3087,6 +3571,7 @@ mainEl.addEventListener("drop", async (e) => {
 function applySpellcheck() {
   const on = !!getAppearance().spellcheck;
   if (view?.contentDOM) view.contentDOM.spellcheck = on;
+  if (splitView?.contentDOM) splitView.contentDOM.spellcheck = on;
   window.studio?.setSpellcheck?.(on);
 }
 
@@ -3134,7 +3619,7 @@ const commands = {
   new: newDoc,
   open: openFile,
   "quick-open": quickOpen,
-  save,
+  save: () => activeDocContext().save(),
   "save-as": saveAs,
   "export-html": doExportHtml,
   "export-html-bare": doExportHtmlBare,
@@ -3153,53 +3638,56 @@ const commands = {
   strike: () => wrap("~~"),
   highlight: () => wrap("=="),
   code: () => wrap("`"),
-  link: insertLink,
+  link: () => insertLink(),
   image: pickImage,
   "upload-document-images": uploadDocumentImages,
   "image-settings": openImageSettings,
   table: pickTableSize,
-  toc: insertToc,
-  fence: insertFence,
-  math: insertMathBlock,
-  hr: insertHr,
+  toc: () => insertToc(),
+  fence: () => insertFence(),
+  math: () => insertMathBlock(),
+  hr: () => insertHr(),
   quote: () => toggleLinePrefix(quotePrefix),
   ul: () => toggleLinePrefix(ulPrefix),
   ol: () => toggleLinePrefix(olPrefix),
   task: () => toggleLinePrefix(taskPrefix),
-  "clear-format": clearFormat,
+  "clear-format": () => clearFormat(),
   "format-spacing": () => {
-    const orig = view.state.doc.toString();
+    const av = activeView();
+    const orig = av.state.doc.toString();
     const next = panguSpacing(orig);
     if (next === orig) {
       flash("中英文间距已规范");
       return;
     }
-    const head = Math.min(view.state.selection.main.head, next.length);
-    view.dispatch({
+    const head = Math.min(av.state.selection.main.head, next.length);
+    av.dispatch({
       changes: { from: 0, to: orig.length, insert: next },
       selection: { anchor: head },
     });
     flash("已为中英文混排补齐空格");
-    view.focus();
+    av.focus();
   },
-  undo: () => undo(view),
-  redo: () => redo(view),
+  undo: () => undo(activeView()),
+  redo: () => redo(activeView()),
   "select-all": () => {
-    view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
-    view.focus();
+    const av = activeView();
+    av.dispatch({ selection: { anchor: 0, head: av.state.doc.length } });
+    av.focus();
   },
   find: () => {
-    openSearchPanel(view);
-    view.focus();
+    const av = activeView();
+    openSearchPanel(av);
+    av.focus();
   },
   "search-files": () => focusFileSearch(),
   "draft-recovery": () => openDraftRecoveryModal(),
   "fold-heading": () => {
-    if (!foldCurrentHeading(view)) flash("当前位置不在可折叠的 H1–H3 章节内");
+    if (!foldCurrentHeading(activeView())) flash("当前位置不在可折叠的 H1–H3 章节内");
   },
-  "unfold-heading": () => unfoldCurrentHeading(view),
-  "fold-all-headings": () => foldAllHeadings(view),
-  "unfold-all-headings": () => unfoldAllHeadings(view),
+  "unfold-heading": () => unfoldCurrentHeading(activeView()),
+  "fold-all-headings": () => foldAllHeadings(activeView()),
+  "unfold-all-headings": () => unfoldAllHeadings(activeView()),
   "view-files": () => showSide("files"),
   "view-outline": () => showSide("outline"),
   "toggle-sidebar": () => setSidebar(!sidebarVisible()),
@@ -3210,14 +3698,20 @@ const commands = {
     view.dispatch({
       effects: [setSourceMode.of(on), refreshDecorations.of(null)],
     });
+    if (splitView) {
+      splitView.dispatch({
+        effects: [setSourceMode.of(on), refreshDecorations.of(null)],
+      });
+    }
     document.body.classList.toggle("source-mode", on);
     shell.setSourceMode(on);
     flash(on ? "源代码模式：开" : "源代码模式：关");
-    view.focus();
+    activeView().focus();
   },
   focus: () => {
     const on = document.body.classList.toggle("focus-mode");
     view.dispatch({ effects: refreshDecorations.of(null) });
+    splitView?.dispatch({ effects: refreshDecorations.of(null) });
     flash(on ? "专注模式：开" : "专注模式：关");
   },
   typewriter: () => {
@@ -3232,7 +3726,7 @@ const commands = {
   h6: () => setHeading(6),
   p: () => setHeading(0),
   copy: () => copySelection(false),
-  "copy-markdown": () => copyMarkdownSelection(),
+  "copy-markdown": () => copyMarkdownSelection(activeView()),
   "copy-wechat": () => copyAsWeChatHtml(),
   "zoom-in": () => adjustFontSize(1),
   "zoom-out": () => adjustFontSize(-1),
@@ -3241,17 +3735,19 @@ const commands = {
   "jump-forward": () => jumpForward(),
   cut: () => copySelection(true),
   paste: async () => {
+    const av = activeView();
     try {
       const text = await navigator.clipboard.readText();
-      if (!handlePastedText(text)) insertAtCursor(text);
+      if (!handlePastedText(text, av)) insertAtCursor(text, undefined, av);
     } catch {
       flash("无法读取剪贴板");
     }
   },
   "paste-plain": async () => {
+    const av = activeView();
     try {
       const text = await navigator.clipboard.readText();
-      insertAtCursor(text);
+      insertAtCursor(text, undefined, av);
     } catch {
       flash("无法读取剪贴板");
     }
@@ -3285,13 +3781,13 @@ const commands = {
  * 复制 / 剪切：写入渲染后 HTML + 渲染后纯文本。
  * 读写都过 state，删完必然一致。
  */
-async function copySelection(cut) {
-  const { state: s } = view;
+async function copySelection(cut, targetView = activeView(), targetDir = activeState().dir) {
+  const { state: s } = targetView;
   if (s.selection.main.empty) {
     flash("没有选中内容");
     return;
   }
-  const { html, plain } = renderSelectionForClipboard(s, state.dir);
+  const { html, plain } = renderSelectionForClipboard(s, targetDir);
   if (!plain && !html) {
     flash("没有选中内容");
     return;
@@ -3316,21 +3812,21 @@ async function copySelection(cut) {
     }
   }
   if (cut) {
-    view.dispatch(
+    targetView.dispatch(
       s.changeByRange((r) => ({
         changes: { from: r.from, to: r.to, insert: "" },
         range: EditorSelection.cursor(r.from),
       })),
     );
   }
-  view.focus();
+  targetView.focus();
 }
 
 /**
  * 复制为 Markdown 源码（Ctrl+Shift+C）。
  */
 async function copyMarkdownSelection(v) {
-  const targetView = v || view;
+  const targetView = v || activeView();
   const s = targetView.state;
   const parts = s.selection.ranges
     .map((r) => s.sliceDoc(r.from, r.to))
@@ -3352,8 +3848,8 @@ async function copyMarkdownSelection(v) {
 /**
  * 一键复制为公众号 / 飞书 / 邮件富文本 HTML（复用当前主题 CSS 变量生成全内联样式）。
  */
-async function copyAsWeChatHtml() {
-  const s = view.state;
+async function copyAsWeChatHtml(targetView = activeView(), targetDir = activeState().dir) {
+  const s = targetView.state;
   const sel = s.selection.main;
   const md = sel.empty ? s.doc.toString() : s.sliceDoc(sel.from, sel.to);
   if (!md.trim()) {
@@ -3364,7 +3860,7 @@ async function copyAsWeChatHtml() {
   const themeMeta = THEMES.find((it) => it.id === themeId);
   const { html, plain } = await renderWeChatHtml(md, {
     themeId,
-    imageResolver: (srcUrl) => resolveImageForClipboard(srcUrl, state.dir),
+    imageResolver: (srcUrl) => resolveImageForClipboard(srcUrl, targetDir),
   });
   try {
     if (window.ClipboardItem) {
@@ -3392,9 +3888,9 @@ async function copyAsWeChatHtml() {
 }
 
 /** 去掉选中文本的行内标记（**、*、~~、`、[text](url) → text） */
-function clearFormat() {
-  const { state: s } = view;
-  view.dispatch(
+function clearFormat(targetView = activeView()) {
+  const { state: s } = targetView;
+  targetView.dispatch(
     s.changeByRange((range) => {
       const raw = s.sliceDoc(range.from, range.to);
       const plain = raw
@@ -3410,7 +3906,7 @@ function clearFormat() {
       };
     }),
   );
-  view.focus();
+  targetView.focus();
 }
 
 /** 结构化快捷键面板：分组标题 + 「键位 / 说明」网格，不再是一长串点号文本 */
@@ -3731,7 +4227,7 @@ const menubar = createMenubar({
 });
 
 // 菜单收起后把焦点还给编辑器，和原生菜单一致
-document.addEventListener("menubar:closed", () => view.focus());
+document.addEventListener("menubar:closed", () => activeView().focus());
 // 语言切换：菜单栏顶栏按钮与打开中的菜单页重读文案（Vue 组件靠响应式自动更新）
 document.addEventListener("locale-change", () => menubar.refreshLabels());
 document.addEventListener("appearance-change", applySpellcheck);
@@ -3747,7 +4243,10 @@ bindSidebarSplit();
   await initTheme();
   bindThemeEditorView(view);
   // katex 懒加载就绪后重算装饰：公式从源码占位变成渲染结果（widget 的 eq 含就绪标记）。
-  onTexReady(() => view.dispatch({ effects: refreshDecorations.of(null) }));
+  onTexReady(() => {
+    view.dispatch({ effects: refreshDecorations.of(null) });
+    splitView?.dispatch({ effects: refreshDecorations.of(null) });
+  });
   const qs = new URLSearchParams(location.search);
 
   // 自绘顶栏 + 自绘窗口三键（Tauri 没有 titleBarOverlay，按钮由 TitleBar.vue 绘制）
@@ -3954,6 +4453,11 @@ async function handleDroppedPaths(paths) {
   if (!paths || !paths.length) return;
   const doc = paths.find((p) => /\.(md|markdown|txt)$/i.test(p));
   if (doc) {
+    if (splitState.path && samePath(doc, splitState.path)) {
+      focusPane("split");
+      splitView?.focus();
+      return;
+    }
     if (!(await settleCurrentDocument())) return;
     try {
       const r = await window.studio.readFile(doc);
@@ -4028,7 +4532,9 @@ window.__plumeUnsaved = askUnsaved;
 
 /** 统一的关闭出口：先处理未保存文档，再真正退出。 */
 async function requestClose() {
-  if (await settleCurrentDocument()) window.studio?.quit();
+  if ((await settleCurrentDocument()) && (await settleSplitDocument())) {
+    window.studio?.quit();
+  }
 }
 if (window.studio?.onCloseRequested) window.studio.onCloseRequested(requestClose);
 
@@ -4059,13 +4565,42 @@ function focusFileSearch() {
   });
 }
 
+async function reloadAllModifiedFiles(paths) {
+  await reloadModifiedFiles(paths);
+  if (!Array.isArray(paths) || !paths.length || !splitState.path || !splitView || !window.studio?.readFile) return;
+  const hit = paths.some((p) => samePath(p, splitState.path));
+  if (hit && !splitState.dirty) {
+    try {
+      const doc = await window.studio.readFile(splitState.path);
+      if (doc && typeof doc.content === "string") {
+        const text = withTrailingBlank(normalizeMarkdownText(doc.content));
+        Object.assign(splitState, detectDocFormat(doc.content));
+        splitState.encoding = String(doc.encoding || "utf-8").toLowerCase();
+        splitView.dispatch({
+          changes: { from: 0, to: splitView.state.doc.length, insert: text },
+          effects: refreshDecorations.of(null),
+        });
+        setSplitDirty(false);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 return {
   run,
   openPath: openTreePath,
-  reloadModifiedFiles,
+  reloadModifiedFiles: reloadAllModifiedFiles,
   openSearchHit: openSearchedFile,
   openTab,
   closeTab,
+  closeOtherTabs,
+  closeTabsToRight,
+  openSplit,
+  closeSplit,
+  swapSplit,
+  focusPane,
   outlineJump,
   refreshOutline: renderOutline,
   selectSide: (v) => {

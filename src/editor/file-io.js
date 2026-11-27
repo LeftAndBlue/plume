@@ -5,7 +5,7 @@ import { Transaction } from '@codemirror/state';
 import { history } from '@codemirror/commands';
 import { ensureSyntaxTree, unfoldEffect } from '@codemirror/language';
 import { refreshDecorations } from './live-preview.js';
-import { setEditingImage } from './widgets.js';
+import { setDocBaseEffect, setEditingImage } from './widgets.js';
 import { clearTableSelection } from './table-selection.js';
 import { detectDocFormat, serializeForDisk, withTrailingBlank } from './doc-format.js';
 import { normalizeMarkdownText } from './rich-doc.js';
@@ -79,27 +79,29 @@ export function createFileIO({
     window.studio?.watchDocument?.(state.path);
     if (isFullPath) rememberRecent(pathOrName);
     forgetMissingPastes(text);
-    if (window.studio && isFullPath) {
-      setDocBase(docBaseUrl(state.dir));
-    } else {
-      setDocBase(null);
-    }
+    const nextBase = window.studio && isFullPath ? docBaseUrl(state.dir) : null;
+    setDocBase(nextBase);
     if (previousTab) {
       view.setState(previousTab.editorState);
+      view.dispatch({ effects: setDocBaseEffect.of(nextBase) });
     } else if (keepHistory) {
-      if (text !== view.state.doc.toString()) {
-        view.dispatch({
-          changes: { from: 0, to: view.state.doc.length, insert: text },
-        });
-      }
-      view.dispatch({ selection: { anchor: 0 }, scrollIntoView: true });
+      const changes =
+        text !== view.state.doc.toString()
+          ? { from: 0, to: view.state.doc.length, insert: text }
+          : undefined;
+      view.dispatch({
+        ...(changes ? { changes } : {}),
+        selection: { anchor: 0 },
+        effects: setDocBaseEffect.of(nextBase),
+        scrollIntoView: true,
+      });
     } else {
       view.dispatch({ effects: historySlot.reconfigure([]) });
       view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: text },
         selection: { anchor: 0 },
         scrollIntoView: true,
-        effects: historySlot.reconfigure(history()),
+        effects: [historySlot.reconfigure(history()), setDocBaseEffect.of(nextBase)],
         annotations: Transaction.addToHistory.of(false),
       });
     }

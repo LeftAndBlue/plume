@@ -70,7 +70,20 @@ function showContext(event, entry) {
   const api = shell.runtime;
   if (!api) return;
   const items = [];
-  if (!entry.dir) items.push({ label: '打开', action: () => api.openPath(entry.path) });
+  if (!entry.dir) {
+    const isCurrent = samePath(entry.path, shell.path);
+    const isSplit = samePath(entry.path, shell.splitPath);
+    items.push({ label: '打开', action: () => api.openPath(entry.path) });
+    if (isSplit) {
+      items.push({ label: t('tabs.closeSplit'), action: () => api.closeSplit?.() });
+    } else {
+      items.push({
+        label: t('tabs.split'),
+        disabled: isCurrent,
+        action: () => api.openSplit?.(entry.path),
+      });
+    }
+  }
   if (entry.dir) {
     items.push(
       { label: '新建文档', action: () => api.fileOps.create(entry.path, false) },
@@ -120,6 +133,7 @@ provide('fileTree', {
         data-dir="0"
         :title="hit.path + (hit.text ? '\n' + hit.text : '')"
         @click="shell.runtime?.openSearchHit(hit)"
+        @contextmenu="showContext($event, { path: hit.path, name: hit.name, dir: false })"
       >
         <div class="ft-hit-head">
           <span class="ft-icon"><FileText :size="14" :stroke-width="1.8" /></span>

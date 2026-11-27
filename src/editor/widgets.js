@@ -20,6 +20,18 @@ bindTableSelectionDismiss();
 
 let docBase = null;
 
+/** 按 EditorState 隔离的文档资源基址（分栏展示不同目录文档时互不串扰）。 */
+export const setDocBaseEffect = StateEffect.define();
+export const docBaseField = StateField.define({
+  create: () => null,
+  update(value, tr) {
+    for (const e of tr.effects) {
+      if (e.is(setDocBaseEffect)) return e.value || null;
+    }
+    return value;
+  },
+});
+
 export function setDocBase(url) {
   docBase = url || null;
 }
@@ -72,7 +84,7 @@ export function setLocalUrlConverter(fn) {
  * 两个坑：`new URL('C:/a.png')` 会把 c: 当协议，所以盘符路径得自己补 file:///；
  * 而 `#` `?` 在文件名里是合法字符，先编码掉，免得被当成片段/查询截断。
  */
-export function resolveSrc(src) {
+export function resolveSrc(src, baseOverride = docBase) {
   if (!src) return '';
   if (SCHEME.test(src)) return src;
 
@@ -83,8 +95,8 @@ export function resolveSrc(src) {
     if (clean.startsWith('//')) return localUrlConverter(src);
     if (/^[a-zA-Z]:\//.test(clean)) return localUrlConverter(src);
     if (clean.startsWith('/')) return new URL('file://' + clean).href;
-    if (!docBase) return clean;
-    return new URL(clean, docBase).href;
+    if (!baseOverride) return clean;
+    return new URL(clean, baseOverride).href;
   } catch {
     return clean;
   }
@@ -304,7 +316,8 @@ export class ImageWidget extends WidgetType {
     wrap.className =
       'cm-image' + (this.inline ? ' is-inline' : ' is-block') + (showUrl ? ' is-editing' : '');
     wrap.title = showUrl ? '改成 Markdown 图片语法，清空则删除图片' : '点击后在图片上方编辑图片语法';
-    const url = resolveSrc(this.src);
+    const base = this.base ?? view?.state?.field?.(docBaseField, false) ?? currentDocBase();
+    const url = resolveSrc(this.src, base);
     wrap.dataset.src = url;
     wrap.dataset.markdownSrc = this.src;
     wrap.dataset.from = String(this.from);
@@ -692,6 +705,7 @@ export class TableWidget extends WidgetType {
     const thead = document.createElement('thead');
     const tbody = document.createElement('tbody');
     const selBounds = tableSelectionBounds(this.lineNo);
+    const base = view?.state?.field?.(docBaseField, false) ?? currentDocBase();
 
     const buildRow = (r, cells, tag) => {
       const tr = document.createElement('tr');
@@ -699,7 +713,7 @@ export class TableWidget extends WidgetType {
         const cell = document.createElement(tag);
         // 格子里的 `**粗**`、`` `code` ``、`$x^2$` 要渲染出来，不是把源码糊在脸上。
         // 点进格子时浮层编辑器仍然拿到原始 markdown（c.text），所见即所改。
-        cell.appendChild(renderInline(c.text, { resolve: resolveSrc }));
+        cell.appendChild(renderInline(c.text, { resolve: (s) => resolveSrc(s, base) }));
         // 空格子没有任何行盒，会塌成「只有 padding」的一小条，和填了内容的行
         // 差出一整行的高度。打个标记，交给 CSS 用伪元素补一行（见 base.css）。
         if (!c.text) cell.classList.add('is-empty');
