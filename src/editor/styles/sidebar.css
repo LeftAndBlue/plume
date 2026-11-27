@@ -1,0 +1,544 @@
+/* ---------------- 文件树 ---------------- */
+
+.ft-root {
+  padding: 8px 6px 6px;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-context {
+  position: fixed;
+  z-index: 1000;
+  /* Typora 的菜单偏宽、行距更松；二级菜单折叠后顶层条目也不至于排成长龙 */
+  min-width: 208px;
+  max-width: 330px;
+  max-height: min(72vh, 640px);
+  overflow-y: auto;
+  padding: 6px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--chrome-bg);
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
+}
+
+.ft-context.sub-context {
+  z-index: 1001;
+}
+
+.ft-context button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ft-context button:hover { background: var(--chrome-hover); }
+.ft-context button:disabled { opacity: 0.42; cursor: default; background: transparent; }
+.ft-context button.is-danger { color: var(--danger, #c44545); }
+.context-label { display: inline-flex; align-items: center; gap: 4px; }
+.context-check { display: inline-block; width: 12px; font-size: 11px; line-height: 1; font-weight: bold; }
+.context-arrow { margin-left: auto; padding-left: 12px; opacity: 0.55; font-size: 14px; line-height: 1; }
+/* 菜单项右侧的快捷键提示（Typora 的菜单都带这一列） */
+.context-accel {
+  margin-left: auto;
+  padding-left: 24px;
+  color: var(--text-faint);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 图标行 / 多列按钮网格：Typora 段落面板的排法，避免一长条竖排 */
+.context-grid {
+  display: grid;
+  gap: 3px;
+  margin: 3px 0;
+}
+
+.context-grid .context-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.context-grid .context-tile:hover:not(:disabled) {
+  background: var(--chrome-hover);
+  border-color: var(--border-strong);
+}
+
+.context-grid .context-tile:disabled {
+  opacity: 0.42;
+  cursor: default;
+}
+
+.context-grid .context-tile svg {
+  width: 15px;
+  height: 15px;
+}
+
+.context-tile.is-bold {
+  font-weight: 700;
+}
+
+.context-tile.is-italic {
+  font-style: italic;
+  font-family: Georgia, "Times New Roman", serif;
+}
+.context-sep { height: 1px; margin: 4px 5px; background: var(--chrome-border); }
+
+/* 插入表格的行列选择器（table-picker.js）：悬停网格 + 数字输入 */
+.table-picker {
+  position: fixed;
+  z-index: 1100;
+  width: 268px;
+  padding: 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  background: var(--chrome-bg);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.2);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+}
+
+.table-picker .tp-title {
+  margin-bottom: 10px;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.table-picker .tp-grid {
+  display: grid;
+  gap: 3px;
+}
+
+.table-picker .tp-cell {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.table-picker .tp-cell:hover { border-color: var(--accent); }
+.table-picker .tp-cell.is-on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.table-picker .tp-readout {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 12px 0 10px;
+  line-height: 1.3;
+}
+
+.table-picker .tp-readout b {
+  font-weight: 600;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.table-picker .tp-readout span {
+  color: var(--text-faint);
+  font-size: 11px;
+  text-align: right;
+}
+
+.table-picker .tp-fields {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.table-picker .tp-fields label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.table-picker .tp-fields input {
+  width: 100%;
+  min-width: 0;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.table-picker .tp-fields input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.table-picker .tp-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.table-picker .tp-actions button {
+  padding: 6px 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.table-picker .tp-actions button:hover { background: var(--chrome-hover); }
+
+/* 主按钮配色跟随主题：深色主题的 accent 偏亮，用 --bg 当前景保证对比 */
+.table-picker .tp-actions .tp-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+
+.table-picker .tp-actions .tp-primary:hover { filter: brightness(1.06); }
+
+.ft-row.is-drop-target { outline: 1px solid var(--accent); background: var(--accent-soft); }
+
+/* 目录行：一行，一个小三角 + 名字 */
+.ft-row[data-dir="1"] {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+/* 文件行和目录行同一高度：图标 + 名字，时间靠右。摘要放在 title 上，避免两行卡片把轴线撑乱。 */
+.ft-row[data-dir="0"] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+}
+
+.ft-row:hover {
+  background: var(--chrome-hover);
+}
+
+.ft-row:hover .ft-name {
+  color: var(--text);
+}
+
+/* 当前文件：一点淡底 + 左侧一根竖条。
+   标题本身不变色 —— Typora 的当前项也只是淡底，标题仍然用正文色 */
+.ft-row.is-active {
+  background: var(--chrome-active);
+  box-shadow: inset 2px 0 0 var(--text);
+}
+
+.ft-row.is-active .ft-name {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.ft-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.ft-name {
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-sub {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ft-time {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.ft-caret,
+.ft-caret-slot {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.ft-caret {
+  transform-origin: 50% 50%;
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.ft-caret svg,
+.ft-icon svg {
+  display: block;
+}
+
+.ft-row.is-open .ft-caret {
+  transform: rotate(90deg);
+}
+
+.ft-icon {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.ft-row .ft-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ft-empty {
+  padding: 12px 10px;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.ft-empty button {
+  /* 空态里的「打开文件…」要单独占一行，否则会和说明文字挤在一句中 */
+  display: block;
+  margin-top: 8px;
+  padding: 8px 14px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.ft-children {
+  padding-left: 12px;
+}
+
+#outline {
+  padding-top: 6px;
+}
+
+.outline-item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 8px 6px 4px;
+  margin: 1px 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.outline-item.is-folded {
+  display: none;
+}
+
+.outline-caret,
+.outline-caret-slot {
+  flex: 0 0 14px;
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-faint);
+}
+
+.outline-caret {
+  border-radius: 3px;
+  transform-origin: 50% 50%;
+  transition: transform 0.16s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.outline-caret svg {
+  display: block;
+}
+
+.outline-item.is-open > .outline-caret {
+  transform: rotate(90deg);
+}
+
+.outline-caret:hover {
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+.outline-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.outline-item:hover {
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+/* 点亮光标所在章节：和文件行同一套「淡底 + 左侧竖条」，不描边不投影 */
+.outline-item.is-current {
+  background: var(--chrome-active);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: inset 2px 0 0 var(--text);
+}
+
+.outline-item[data-level="1"] {
+  color: var(--text);
+  font-weight: 600;
+}
+.outline-item[data-level="2"] {
+  padding-left: 16px;
+}
+.outline-item[data-level="3"] {
+  padding-left: 28px;
+  font-size: 12px;
+}
+.outline-item[data-level="4"] {
+  padding-left: 40px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.outline-item[data-level="5"] {
+  padding-left: 52px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.outline-item[data-level="6"] {
+  padding-left: 64px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.outline-empty {
+  padding: 8px 10px;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+#main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+#main.is-dragover::after {
+  content: "松开以打开 / 插入";
+  position: absolute;
+  inset: 12px;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent);
+  font-size: 13px;
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+#editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}

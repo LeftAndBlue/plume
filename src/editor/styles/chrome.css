@@ -1,0 +1,790 @@
+/* ---------------------------------------------------------------
+   Markdown Studio — 应用基础样式
+   只消费变量，具体颜色由 themes/{id}.css 提供（四层级联的第二层）
+   --------------------------------------------------------------- */
+
+:root {
+  /* 界面壳层：系统 UI 字体，紧凑，不跟正文抢。英文在前，中文在后。 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  /* 正文：高 x-height 的英文在前，多字重黑体在后。汉字才会落到中文字体。 */
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Open Sans", "HarmonyOS Sans SC", "PingFang SC", "Source Han Sans SC", "Noto Sans CJK SC", "Microsoft YaHei UI", "Microsoft YaHei", sans-serif;
+  --font-serif: "Charter", "Georgia", "Cambria", "Times New Roman", "LXGW WenKai", "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", "SimSun", serif;
+  --font-body: var(--font-sans);
+  --font-heading: var(--font-body);
+  /* 等宽字体末尾必须接无衬线中文。否则 Windows 上的中文注释会落到新宋体。 */
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", "SF Mono", Consolas, Menlo, "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", monospace;
+  --code-font-size: 0.875em;
+  --code-line-height: 1.6;
+
+  --editor-font-size: 16px;
+  --line-height: 1.75;
+  --para-spacing: 0.85em;
+  --block-gap: 18px;
+  --content-width: 750px;
+  /* 正文栏两侧的留白。必须挂在 .cm-line 上而不是 .cm-content 上，原因见该处的注释 */
+  --gutter-x: 44px;
+  --para-indent: 0em;
+  --sidebar-width: 252px;
+  --toolbar-height: 40px;
+  --status-height: 36px;
+  /* 菜单栏 / 侧栏 / 底栏共用一块更实的底，和正文纸色拉开。 */
+  --chrome-bg: #e6ebf2;
+  --chrome-hover: #d9e0ea;
+  --chrome-active: #d0d8e4;
+  --chrome-border: #c5ceda;
+
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --quote-bar-width: 3.5px;
+  --h-rule: var(--border);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+button,
+select {
+  font-family: inherit;
+}
+
+/* ---------------- 菜单栏 ---------------- */
+
+#chrome {
+  height: var(--toolbar-height);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  user-select: none;
+}
+
+/* 自绘顶栏：整条可拖动窗口；窗口三键由 TitleBar.vue 自绘（Tauri 无 titleBarOverlay）。
+   注意：子元素默认继承 drag，必须显式 no-drag 才不会「按住按钮把窗口拖走」。 */
+body.is-desktop #chrome {
+  -webkit-app-region: drag;
+  padding-right: 0;
+}
+
+/* 窗口三键与控制区不参与拖动 */
+.window-controls,
+.window-controls .win-btn,
+#menubar,
+#menu-panel,
+.menu-pop {
+  -webkit-app-region: no-drag;
+}
+
+body.is-desktop #menu-toggle {
+  -webkit-app-region: no-drag;
+}
+
+.menu-toggle {
+  -webkit-app-region: no-drag;
+  width: 40px;
+  height: 30px;
+  margin-left: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menu-bars {
+  width: 16px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.menu-bars i {
+  display: block;
+  height: 1.5px;
+  border-radius: 1px;
+  background: currentColor;
+  transition: width 0.22s ease;
+}
+
+.menu-bars i:nth-child(1) { width: 16px; }
+.menu-bars i:nth-child(2) { width: 12px; }
+.menu-bars i:nth-child(3) { width: 8px; }
+
+body.menu-open .menu-bars i:nth-child(1) { width: 8px; }
+body.menu-open .menu-bars i:nth-child(2) { width: 16px; }
+body.menu-open .menu-bars i:nth-child(3) { width: 12px; }
+
+.chrome-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 6px;
+  padding-right: 16px;
+  font-size: 13px;
+  color: var(--text);
+  pointer-events: auto;
+}
+
+#st-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-toggle:hover,
+body.menu-open .menu-toggle {
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+#menubar {
+  display: none;
+}
+
+#menu-panel {
+  position: fixed;
+  z-index: 70;
+  top: var(--toolbar-height);
+  left: 0;
+  right: 0;
+  bottom: var(--status-height);
+  display: flex;
+  background: var(--bg);
+}
+
+#menu-panel[hidden] {
+  display: none !important;
+}
+
+.menu-side {
+  width: 232px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  background: #2c313a;
+  color: #e7ebf0;
+}
+
+.menu-side .mb-item {
+  height: 40px;
+  width: 100%;
+  padding: 0 14px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #d5dbe3;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-side .mb-item:hover,
+.menu-side .mb-item.is-open {
+  background: #4b5160;
+  color: #fff;
+}
+
+.menu-side .mb-mnemonic {
+  margin-left: 4px;
+  color: #9aa3b2;
+  font-size: 12px;
+}
+
+.menu-stage {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 28px 40px 24px;
+  background: var(--bg);
+}
+
+.menu-stage-title {
+  margin: 0 0 18px;
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+#menu-panel .menu-pop {
+  position: static;
+  z-index: auto;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  max-width: 720px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  overflow: auto;
+}
+
+#menu-panel .menu-item {
+  height: 40px;
+  padding: 0 8px;
+  font-size: 13px;
+}
+
+/* 主题页表单：选项收进下拉框，行式布局，和设置面板同一套观感 */
+.menu-form {
+  max-width: 460px;
+  font-size: 13px;
+  color: var(--text);
+}
+
+.menu-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+}
+
+.menu-form-row:first-child {
+  border-top: none;
+}
+
+.menu-form-row select {
+  min-width: 180px;
+  padding: 4px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.menu-form-row select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.menu-form-row input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.menu-form-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.menu-form-actions button {
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.menu-form-actions button:hover {
+  background: var(--chrome-hover);
+}
+
+/* 助记键字母：按住 Alt 时才加下划线，和原生菜单一致 */
+.mb-mnemonic {
+  color: var(--text-faint);
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+
+body.alt-mode .mb-mnemonic {
+  text-decoration: underline;
+  color: var(--text);
+}
+
+/* ---------------- 下拉菜单 ---------------- */
+
+.menu-pop {
+  position: fixed;
+  z-index: 80;
+  min-width: 248px;
+  padding: 6px;
+  background: var(--panel-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 14px;
+  color: var(--text);
+  user-select: none;
+}
+
+.menu-pop[hidden] {
+  display: none;
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 4px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.menu-item:hover,
+.menu-item.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.menu-item.is-disabled {
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+/* 勾选列固定宽度：有没有勾都不让文字左右跳 */
+.menu-mark {
+  flex: 0 0 12px;
+  font-size: 10px;
+  color: var(--accent);
+}
+
+.menu-label {
+  flex: 1 1 auto;
+}
+
+.menu-accel {
+  flex: 0 0 auto;
+  padding-left: 24px;
+  color: var(--text-faint);
+  font-size: 12.5px;
+}
+
+.menu-item:hover .menu-accel,
+.menu-item.is-active .menu-accel {
+  color: var(--accent);
+}
+
+/* 子菜单标记（▸）与返回行（←） */
+.menu-sub {
+  flex: 0 0 auto;
+  padding-left: 24px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.menu-item:hover .menu-sub,
+.menu-item.is-active .menu-sub {
+  color: var(--accent);
+}
+
+.menu-item.is-back .menu-mark {
+  color: var(--text-faint);
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* ---------------- 代码块语言选择弹层 ---------------- */
+
+/* 和菜单同一套观感，但它挂在语言标签下面，得自己定位（position: fixed） */
+.lang-pop {
+  position: fixed;
+  z-index: 900;
+  min-width: 168px;
+  padding: 5px;
+  background: var(--panel-bg);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: none;
+  font-size: 14px;
+  color: var(--text);
+  user-select: none;
+}
+
+/* 常用语言可滚动，底部的「纯文本 / 手动输入」钉住不滚 */
+.lang-list {
+  max-height: 246px;
+  overflow-y: auto;
+}
+
+.lang-pop::-webkit-scrollbar,
+.lang-list::-webkit-scrollbar {
+  width: 8px;
+}
+.lang-pop::-webkit-scrollbar-thumb,
+.lang-list::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+.lang-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 4px;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.lang-row:hover,
+.lang-row.is-active {
+  background: var(--hover-bg);
+}
+
+.lang-row.is-current {
+  color: var(--accent);
+}
+
+.lang-tick {
+  width: 12px;
+  flex: 0 0 auto;
+  font-size: 10px;
+  opacity: 0;
+}
+
+.lang-row.is-current .lang-tick {
+  opacity: 1;
+}
+
+.lang-name {
+  flex: 1 1 auto;
+}
+
+/* 右边跟一行等宽的原名：语言表里 "JavaScript" 和要写进围栏的 javascript 不是一回事 */
+.lang-code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.lang-row.is-manual {
+  color: var(--text-muted);
+}
+
+.lang-row.is-manual .lang-name {
+  font-style: italic;
+}
+
+.lang-manual-label {
+  display: block;
+  padding: 4px 6px 6px;
+  color: var(--text-muted);
+}
+
+.lang-manual-input {
+  display: block;
+  width: 100%;
+  min-width: 210px;
+  padding: 6px 8px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  outline: none;
+  font: 12.5px var(--font-ui);
+  user-select: text;
+}
+
+.lang-manual-input:focus {
+  border-color: var(--accent);
+}
+
+.lang-manual-hint {
+  padding: 7px 2px 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.lang-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+/* ---------------- 布局 ---------------- */
+
+#shell {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+#workspace {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+#document-tabs {
+  flex: 0 0 30px;
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+#document-tabs::-webkit-scrollbar { display: none; }
+
+#document-tabs[hidden] { display: none; }
+
+.document-tab { display: flex; align-items: center; min-width: 0; max-width: 220px; border-right: 1px solid var(--chrome-border); color: var(--text-muted); }
+.document-tab.is-active { color: var(--text); background: var(--bg); box-shadow: inset 0 2px var(--accent); }
+.document-tab.is-split { color: var(--text); background: color-mix(in srgb, var(--bg) 65%, var(--chrome-bg)); box-shadow: inset 0 -2px var(--accent); }
+.document-tab-open { flex: 1; min-width: 0; height: 100%; padding: 0 4px 0 12px; border: 0; background: transparent; color: inherit; display: inline-flex; align-items: center; gap: 5px; overflow: hidden; cursor: pointer; }
+.document-tab-split-icon { flex: 0 0 auto; color: var(--accent); opacity: 0.9; }
+.document-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.document-tab-dirty { flex: 0 0 auto; font-size: 9px; line-height: 1; color: var(--accent); }
+.document-tab-close { flex: 0 0 26px; height: 100%; border: 0; background: transparent; color: inherit; cursor: pointer; opacity: 0.6; }
+.document-tab-close:hover { opacity: 1; color: var(--accent); }
+.document-tab-add { flex: 0 0 30px; height: 100%; border: 0; background: transparent; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.12s ease, color 0.12s ease; }
+.document-tab-add:hover { background: var(--chrome-hover); color: var(--text); }
+
+#editor-area {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+}
+
+#editor-area.is-split {
+  --gutter-x: clamp(20px, 3vw, 44px);
+}
+
+#editor-area.is-split #main {
+  flex: var(--split-ratio, 0.5) 1 0;
+  min-width: 180px;
+}
+
+#split-divider {
+  flex: 0 0 4px;
+  background: var(--chrome-border);
+  cursor: col-resize;
+  position: relative;
+  transition: background-color 0.14s ease;
+}
+
+#split-divider::after {
+  content: "";
+  position: absolute;
+  inset: 0 -2px;
+}
+
+#split-divider:hover,
+body.split-dragging #split-divider {
+  background: var(--accent);
+}
+
+body.split-dragging {
+  cursor: col-resize;
+  user-select: none;
+}
+
+#split-pane {
+  flex: calc(1 - var(--split-ratio, 0.5)) 1 0;
+  min-width: 180px;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.split-pane-header {
+  flex: 0 0 28px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  font-size: 12px;
+  user-select: none;
+  min-width: 0;
+}
+
+.is-pane-focused > .split-pane-header {
+  color: var(--text);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+
+.split-pane-dot {
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--border-strong);
+}
+
+.split-pane-dot.is-active {
+  background: var(--accent);
+}
+
+.split-pane-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.split-pane-dirty {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.split-pane-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.split-pane-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.split-pane-btn:hover {
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+#split-editor-host {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 100%;
+}
+
+#sidebar {
+  width: var(--sidebar-width);
+  flex: 0 0 auto;
+  border-right: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.focus-mode #sidebar,
+#sidebar.is-off,
+body.menu-open #sidebar,
+body.menu-open #sidebar-split {
+  display: none;
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: stretch;
+  height: var(--toolbar-height);
+  padding: 0;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.sidebar-tabs {
+  display: flex;
+  width: 100%;
+  gap: 0;
+  padding: 0;
+}
+
+.sb-tab {
+  flex: 1 1 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 0;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  text-align: center;
+  cursor: pointer;
+}
+
+.sb-tab:hover {
+  color: var(--text);
+  background: var(--chrome-hover);
+}
+
+.sb-tab.is-active {
+  background: transparent;
+  color: var(--text);
+  font-weight: 600;
+  border-bottom-color: var(--text);
+  box-shadow: none;
+}
+
+.st-tool svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+/* 两个面板共用一块空间，按 body[data-side] 只显示一个 */
+.sb-panel {
+  display: none;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 8px 24px;
+}
+
+body[data-side="files"] #file-tree,
+body[data-side="outline"] #outline {
+  display: block;
+}

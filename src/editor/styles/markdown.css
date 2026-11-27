@@ -1,0 +1,1136 @@
+/* ---------------- Markdown 元素 ---------------- */
+
+/**
+ * 垂直留白只能用 padding 或会计入盒高的 border，绝对不能在 .cm-content 里面用 margin。
+ *
+ * CM 靠 DOM 量行高，而 offsetHeight / getBoundingClientRect 都**不含 margin**：
+ * 一行 margin-bottom:10px 会让后面的内容真的往下挪 10px，CM 的高度模型却纹丝不动。
+ * 偏差逐块累积，滚过一两个代码块就够错开一整行 —— 表现就是「点标题没反应，
+ * 光标落到隔壁行」。tmp/probe-heights.js 实测过：每个代码块收尾的 10px 外边距
+ * 让偏差从 36px 跳到 46px、再跳到 56px。
+ * 所以下面凡是「想跟下文拉开一点」的地方，都写成 padding-bottom 或 border-bottom。
+ */
+
+.cm-editor .cm-line.cm-heading {
+  position: relative;
+  font-family: var(--font-heading);
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  color: var(--heading);
+}
+
+/* # 号不占正文流，浮在左侧留白里，点进去标题也不会横跳 */
+.cm-heading-badge {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: var(--gutter-x);
+  box-sizing: border-box;
+  padding-right: 8px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* 选择器要带 .cm-editor .cm-line 才有资格盖过上面的栏内边距规则，
+   而且只写上下，左右那 40px 正文栏留白不能动。 */
+.cm-editor .cm-line.cm-h1 {
+  font-size: 1.85em;
+  font-weight: 700;
+  letter-spacing: -0.008em;
+  line-height: 1.3;
+  text-align: var(--h1-align, left);
+  padding-top: 1.2em;
+  padding-bottom: 0.35em;
+}
+.cm-editor .cm-line.cm-h2 {
+  font-size: 1.5em;
+  font-weight: 700;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+  padding-top: 1.15em;
+  padding-bottom: 0.25em;
+}
+
+/* 分隔线只画在正文栏里。挂在整行的 box-shadow 会顺着左右留白伸出去。 */
+.cm-editor .cm-line.cm-h1::after,
+.cm-editor .cm-line.cm-h2::after {
+  content: "";
+  position: absolute;
+  left: var(--gutter-x);
+  right: var(--gutter-x);
+  bottom: 0;
+  height: 1px;
+  background: var(--h-rule, var(--border));
+  pointer-events: none;
+}
+.cm-editor .cm-line.cm-h2::after {
+  opacity: 0.45;
+}
+.cm-editor .cm-line.cm-h3 {
+  font-size: 1.25em;
+  line-height: 1.4;
+  padding-top: 0.95em;
+  padding-bottom: 0.2em;
+}
+.cm-editor .cm-line.cm-h4 {
+  font-size: 1.1em;
+  line-height: 1.5;
+  padding-top: 0.4em;
+  padding-bottom: 0.1em;
+}
+.cm-editor .cm-line.cm-h5,
+.cm-editor .cm-line.cm-h6 {
+  font-size: 1em;
+  line-height: 1.5;
+  padding-top: 0.35em;
+  padding-bottom: 0.08em;
+  color: var(--text-muted);
+}
+
+.cm-content > .cm-line:first-child.cm-h1 {
+  padding-top: 0.1em;
+}
+
+.cm-strong {
+  font-weight: 600;
+  color: var(--strong);
+  letter-spacing: 0.012em;
+}
+
+.cm-em {
+  font-style: italic;
+  padding-right: 0.06em;
+}
+
+.cm-strike {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+.cm-inline-code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  letter-spacing: 0;
+  background: var(--code-bg);
+  color: var(--code-text);
+  border: 1px solid color-mix(in srgb, var(--code-border) 50%, transparent);
+  border-radius: var(--radius-sm);
+  margin: 0 0.18em;
+  padding: 0.12em 0.38em;
+  vertical-align: 0.02em;
+}
+
+.cm-mark {
+  background: var(--mark-bg, #fff3a8);
+  color: inherit;
+  border-radius: var(--radius-sm);
+  margin: 0 0.2em;
+  padding: 0.05em 0.12em;
+}
+
+.cm-underline {
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.cm-kbd {
+  display: inline-block;
+  padding: 0.04em 0.38em;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  background: var(--code-bg);
+  color: var(--text);
+  font: 0.82em/1.35 var(--font-mono);
+  vertical-align: 0.04em;
+  white-space: nowrap;
+}
+
+.cm-sup,
+.cm-sub {
+  font-size: 0.75em;
+  line-height: 0;
+}
+
+.cm-sup { vertical-align: super; }
+.cm-sub { vertical-align: sub; }
+
+.cm-link {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--accent-underline);
+  cursor: pointer;
+}
+
+.cm-link:hover {
+  border-bottom-color: var(--accent);
+}
+
+.cm-list-mark {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.cm-bullet,
+.cm-ordered-num {
+  display: inline-block;
+  width: 1.5em;
+  margin-left: -1.5em;
+  text-align: right;
+  padding-right: 0.35em;
+  color: color-mix(in srgb, var(--text-muted) 72%, var(--accent));
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: none;
+  pointer-events: none;
+}
+
+.cm-ordered-num {
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-li {
+  /* 同类列表项之间留一点缝，靠行内 padding，CM 量得到 */
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+.cm-list-first,
+.cm-quote-first {
+  /* 块外留白用 border：CM 会把它计入行高，且背景色能形成真正的视觉间隔。 */
+  border-top: var(--block-gap) solid var(--bg);
+}
+
+.cm-list-last,
+.cm-quote-last {
+  border-bottom: var(--block-gap) solid var(--bg);
+}
+
+.cm-editor .cm-line.cm-quote.cm-quote-first {
+  padding-top: 8px;
+}
+
+.cm-editor .cm-line.cm-quote.cm-quote-last {
+  padding-bottom: 8px;
+}
+
+/* 列表与引用正文之间不再额外垫一圈 border。
+   这段 border 即使染成引用底色，也会打断左侧竖线；真正的引用首尾留白仍保留。 */
+.cm-quote.cm-list-first:not(.cm-quote-first) {
+  border-top: 0;
+}
+.cm-quote.cm-list-last:not(.cm-quote-last) {
+  border-bottom: 0;
+}
+
+.cm-quote {
+  /* 行的左右留白已经给了 .cm-line，这里用外边距把引用块拉回正文栏内。
+     左竖线用渐变而不是 border-left：首尾行的上下留白是另一侧 border，
+     两种 border 在角上会斜接，竖线两头就被切成尖角。
+     列表通过 --list-indent 预留标记位置，序号/圆点不会越出引用竖线。 */
+  margin: 0 var(--gutter-x);
+  border-left: 0;
+  padding-left: calc(14px + var(--list-indent, 0px)) !important;
+  color: var(--quote-text);
+  background-color: var(--quote-bg);
+  background-image: linear-gradient(var(--quote-bar), var(--quote-bar));
+  background-size: var(--quote-bar-width) 100%;
+  background-position: left top;
+  background-repeat: no-repeat;
+  background-clip: padding-box;
+}
+
+/* 嵌套引用：每深一层多一条左竖线。> 始终隐藏，编辑中的行也保持同一套竖线。 */
+.cm-editor .cm-line.cm-quote.cm-qd-2 {
+  padding-left: calc(26px + var(--list-indent, 0px)) !important;
+  background-image: linear-gradient(var(--quote-bar), var(--quote-bar)), linear-gradient(var(--quote-bar), var(--quote-bar));
+  background-size: var(--quote-bar-width) 100%, var(--quote-bar-width) 100%;
+  background-position: left top, 10px top;
+  background-repeat: no-repeat;
+}
+.cm-editor .cm-line.cm-quote.cm-qd-3 {
+  padding-left: calc(38px + var(--list-indent, 0px)) !important;
+  background-image: linear-gradient(var(--quote-bar), var(--quote-bar)), linear-gradient(var(--quote-bar), var(--quote-bar)),
+    linear-gradient(var(--quote-bar), var(--quote-bar));
+  background-size: var(--quote-bar-width) 100%, var(--quote-bar-width) 100%, var(--quote-bar-width) 100%;
+  background-position: left top, 10px top, 22px top;
+  background-repeat: no-repeat;
+}
+.cm-editor .cm-line.cm-quote.cm-qd-4 {
+  padding-left: calc(50px + var(--list-indent, 0px)) !important;
+  background-image: linear-gradient(var(--quote-bar), var(--quote-bar)), linear-gradient(var(--quote-bar), var(--quote-bar)),
+    linear-gradient(var(--quote-bar), var(--quote-bar)), linear-gradient(var(--quote-bar), var(--quote-bar));
+  background-size: var(--quote-bar-width) 100%, var(--quote-bar-width) 100%, var(--quote-bar-width) 100%, var(--quote-bar-width) 100%;
+  background-position: left top, 10px top, 22px top, 34px top;
+  background-repeat: no-repeat;
+}
+
+.cm-editor .cm-line.cm-callout {
+  --quote-bar: var(--callout);
+}
+.cm-editor .cm-line.cm-callout-note { --callout: #3b6cf0; background-color: rgba(59, 108, 240, 0.08); }
+.cm-editor .cm-line.cm-callout-tip { --callout: #1a9b5c; background-color: rgba(26, 155, 92, 0.1); }
+.cm-editor .cm-line.cm-callout-important { --callout: #7c4dff; background-color: rgba(124, 77, 255, 0.1); }
+.cm-editor .cm-line.cm-callout-warning { --callout: #d4880f; background-color: rgba(212, 136, 15, 0.12); }
+.cm-editor .cm-line.cm-callout-caution { --callout: #d64545; background-color: rgba(214, 69, 69, 0.1); }
+
+.cm-callout-label {
+  display: inline-block;
+  margin-right: 0.4em;
+  padding: 0.05em 0.4em;
+  border-radius: 4px;
+  font-family: var(--font-ui);
+  font-size: 0.72em;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  color: var(--callout, var(--accent));
+  background: color-mix(in srgb, var(--callout, var(--accent)) 16%, transparent);
+  vertical-align: 0.08em;
+  user-select: none;
+}
+
+/* 代码块超长直接换行。每一视觉行都从同一条左边线起排，不因为行号把首行和续行错开。 */
+.cm-content.cm-lineWrapping > .cm-line.cm-code-line:not(.cm-fence-open):not(.cm-fence-close) {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  text-indent: 0 !important;
+}
+
+.cm-code-line {
+  /* 同上：留白在行上，代码块用外边距退回正文栏宽度 */
+  margin: 0 var(--gutter-x);
+  background: var(--code-bg);
+  font-family: var(--font-mono);
+  font-size: var(--code-font-size);
+  letter-spacing: 0;
+  line-height: var(--code-line-height);
+  font-variant-ligatures: contextual;
+  font-feature-settings: "calt" 1, "liga" 1;
+  tab-size: 2;
+  padding-left: 18px !important;
+  padding-right: 18px !important;
+  border-left: 1px solid var(--code-border);
+  border-right: 1px solid var(--code-border);
+}
+
+.cm-code-first {
+  /* 12px 是代码框内边距，--block-gap 是框外间隔；inset shadow 补上原来的 1px 顶边框。 */
+  border-top: var(--block-gap) solid var(--bg);
+  border-radius: 8px 8px 0 0;
+  padding-top: 12px !important;
+  box-shadow: inset 0 1px 0 var(--code-border);
+}
+
+.cm-code-last {
+  border-bottom: var(--block-gap) solid var(--bg);
+  border-radius: 0 0 8px 8px;
+  padding-bottom: 12px !important;
+  box-shadow: inset 0 -1px 0 var(--code-border);
+}
+
+.cm-code-first.cm-code-last {
+  border-radius: 8px;
+  padding-bottom: 12px !important;
+  box-shadow: inset 0 1px 0 var(--code-border), inset 0 -1px 0 var(--code-border);
+}
+
+/* 已闭合代码块的围栏只占源码，不占一行视觉高度。
+   顶栏悬浮在首行代码右上角；首尾内边距交给真正的代码正文行。 */
+.cm-code-first.cm-fence-open,
+.cm-code-last.cm-fence-close {
+  position: relative;
+  height: 0;
+  min-height: 0;
+  font-size: 0;
+  line-height: 0;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  border-left: 0;
+  border-right: 0;
+  border-radius: 0;
+  box-shadow: none;
+  /* 高度为 0 的围栏行贴在代码正文顶上。不放行点击的话，从第一行往下拖会选中 ```js。 */
+  pointer-events: none;
+}
+
+.cm-code-first.cm-fence-open {
+  /* 边框颜色取背景色：边框本身参与高度测量，但主题色变了要跟着变 */
+  border-top: var(--block-gap) solid var(--bg);
+}
+
+.cm-code-last.cm-fence-close {
+  border-bottom: var(--block-gap) solid var(--bg);
+  overflow: visible;
+}
+
+.cm-lang-badge {
+  position: absolute;
+  right: 12px;
+  top: 8px;
+  z-index: 4;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  min-width: 88px;
+  height: 28px;
+  padding: 0 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--bg-soft);
+  color: var(--text-faint);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(20, 24, 32, 0.06);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.cm-lang-badge.is-on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cm-lang-badge:hover {
+  color: var(--text-muted);
+  border-color: var(--border-strong);
+  background: var(--panel-bg);
+}
+
+.cm-code-body-first {
+  border-top: 0;
+  border-radius: 8px 8px 0 0;
+  padding-top: 16px !important;
+  padding-right: 52px !important;
+  box-shadow: inset 0 1px 0 var(--code-border);
+}
+
+/* 行号槽和代码分开，跟 Typora 的 gutter 一样。
+   留白写在行的 padding 上，换行后的下一视觉行也从同一条竖线起排。 */
+:root[data-code-ln="1"] .cm-code-line:not(.cm-fence-open):not(.cm-fence-close):not(.cm-fence-pending):not(.cm-no-ln) {
+  counter-increment: cm-code-ln;
+  position: relative;
+  padding-left: 64px !important;
+  padding-right: 18px !important;
+}
+
+:root[data-code-ln="1"] .cm-code-first {
+  counter-reset: cm-code-ln;
+}
+
+:root[data-code-ln="1"] .cm-code-body-first:not(.cm-fence-open) {
+  padding-right: 48px !important;
+}
+
+:root[data-code-ln="1"] .cm-code-line:not(.cm-fence-open):not(.cm-fence-close):not(.cm-fence-pending):not(.cm-no-ln)::before {
+  content: counter(cm-code-ln);
+  /* 必须脱离文字流。留在行内时，首行会挨着数字，换行却从 padding 起排，上下对不齐。 */
+  position: absolute !important;
+  display: block !important;
+  float: none;
+  left: 0;
+  top: 0;
+  z-index: 2;
+  box-sizing: border-box;
+  width: 52px;
+  margin: 0;
+  padding: 0 12px 0 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--text-faint) 80%, transparent);
+  font-size: inherit;
+  line-height: inherit;
+  text-align: right;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+}
+
+:root[data-code-ln="1"] .cm-code-line.cm-code-body-first:not(.cm-fence-open):not(.cm-fence-close):not(.cm-fence-pending):not(.cm-no-ln)::before {
+  top: 16px;
+}
+
+/* 只在光标那一行轻轻压一点。选区自己有蓝色，这里再混深色会把行号一起涂暗。
+   选区层在文字上面，必须保持半透明，不能再垫不透明底，否则字会被盖住。 */
+.cm-code-line.cm-code-active:not(.cm-fence-open):not(.cm-fence-close) {
+  background: color-mix(in srgb, var(--code-bg) 94%, var(--text) 6%);
+}
+
+.cm-code-body-last {
+  border-radius: 0 0 8px 8px;
+  padding-bottom: 12px !important;
+  box-shadow: inset 0 -1px 0 var(--code-border);
+}
+
+.cm-code-body-first.cm-code-body-last {
+  border-radius: 8px;
+}
+
+.cm-fence-open .cm-fence-bar {
+  position: absolute;
+  top: calc(var(--block-gap) + 3px);
+  right: 10px;
+  z-index: 3;
+  width: auto;
+  min-height: 18px;
+}
+
+/* 顶栏和行号不参与框选。围栏行本身不接鼠标，只有语言标签和复制按钮能点。 */
+.cm-fence-bar,
+.cm-fence-chip,
+.cm-fence-copy,
+.cm-code-line::before {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.cm-fence-chip,
+.cm-fence-copy {
+  pointer-events: auto;
+}
+
+/* 代码块顶栏：语言标签 + 复制，都靠右上角。
+   用 inline-flex 而不是 flex —— 这行被整体 replace 掉，块级元素会让 CM 量不出行高。 */
+.cm-fence-bar {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: 18px;
+}
+
+.cm-fence-chip {
+  cursor: pointer;
+}
+
+.cm-fence-chip:hover {
+  color: var(--text);
+}
+
+.cm-fence-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  color: var(--text-faint);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  /* 平时很淡，鼠标进到顶栏才实心：不跟正文抢注意力，但也不至于找不到 */
+  opacity: 0.45;
+  transition: opacity 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.cm-fence-copy svg {
+  display: block;
+}
+
+.cm-fence-bar:hover .cm-fence-copy {
+  opacity: 1;
+}
+
+.cm-fence-copy:hover {
+  color: var(--text);
+  border-color: var(--code-border);
+}
+
+.cm-fence-copy.is-done {
+  opacity: 1;
+  color: #2f9e62;
+}
+
+.cm-task {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  margin-left: -1.5em;
+  vertical-align: -2px;
+  border: 1.5px solid var(--checkbox-border);
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  position: relative;
+  transition: background 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.cm-task:hover {
+  border-color: var(--accent);
+}
+
+.cm-task.is-done {
+  background: var(--accent);
+  border-color: var(--accent);
+  animation: cm-task-pop 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes cm-task-pop {
+  0% { transform: scale(0.82); }
+  60% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+.cm-task.is-done::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  width: 3px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 1.8px 1.8px 0;
+  transform: translate(-50%, -50%) rotate(42deg);
+  transform-origin: center;
+}
+
+.cm-task-done {
+  color: var(--text-faint);
+  text-decoration: line-through;
+  text-decoration-color: var(--text-faint);
+}
+
+.cm-task-done .cm-task {
+  text-decoration: none;
+}
+
+.cm-hr {
+  margin: 0 var(--gutter-x);
+  padding: var(--block-gap) 0;
+}
+
+/* ---------------- 目录（[toc]） ---------------- */
+
+/* 外侧只管上下留白（padding 会被 CM 量进块高），可见的卡片交给内层。
+   以前写 margin: 12px 0 16px，那 28px 全都不在 CM 的高度模型里。 */
+.cm-toc {
+  margin: 0 var(--gutter-x);
+  padding: var(--block-gap) 0;
+}
+
+.cm-toc-box {
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+  background: var(--panel-bg);
+  line-height: 1.7;
+  overflow: hidden;
+}
+
+.cm-toc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 12px 6px;
+}
+
+.cm-toc-title {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.cm-toc-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.cm-toc-delete:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.cm-toc-list {
+  margin: 0 10px 10px;
+  padding: 6px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 2px;
+}
+
+.cm-toc-item {
+  display: block;
+  padding: 1px 0;
+  color: var(--accent);
+  font-size: 14px;
+  cursor: pointer;
+  border-radius: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cm-toc-item:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.cm-toc-h1 {
+  font-weight: 500;
+}
+
+.cm-toc-empty {
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+.cm-hr hr {
+  border: none;
+  border-top: 1px solid var(--border-strong);
+  margin: 0;
+}
+
+.cm-image {
+  display: block;
+  padding: 0;
+}
+
+/* 块级图片不在 .cm-line 里，左右要自己对齐正文栏。上下只留一点，不再垫出一整行。 */
+.cm-editor .cm-line.cm-image-line,
+.cm-editor .cm-line.cm-image-line.cm-para-last,
+.cm-editor .cm-line.cm-image-line.cm-para-first {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  text-indent: 0 !important;
+}
+
+.cm-image.is-inline {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0;
+  vertical-align: -0.15em;
+}
+
+.cm-mermaid,
+.cm-frontmatter,
+.cm-fn-def {
+  margin: 0 var(--gutter-x);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-soft);
+}
+
+.cm-mermaid {
+  overflow-x: auto;
+}
+
+.cm-mermaid.is-broken {
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.cm-frontmatter-title {
+  margin-bottom: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+}
+
+.cm-frontmatter-row {
+  display: flex;
+  gap: 12px;
+  padding: 2px 0;
+  font-size: 13px;
+}
+
+.cm-frontmatter-row span:first-child {
+  min-width: 5em;
+  color: var(--text-muted);
+}
+
+.cm-fn-ref {
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.75em;
+  margin: 0 0.1em;
+}
+
+.cm-fn-def {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.cm-fn-def sup {
+  color: var(--accent);
+}
+
+.cm-image.is-block.is-left {
+  text-align: left;
+}
+.cm-image.is-block.is-right {
+  text-align: right;
+}
+.cm-image.is-block.is-center {
+  text-align: center;
+}
+.cm-image.is-block.is-left img,
+.cm-image.is-block.is-right img {
+  margin-left: 0;
+  margin-right: 0;
+}
+.cm-image.is-block.is-right img {
+  margin-left: auto;
+}
+.cm-image.is-block.is-center img {
+  margin: 0 auto;
+}
+
+.cm-image.is-block {
+  margin: 0 var(--gutter-x);
+  padding: 8px 0;
+  text-align: center;
+  cursor: pointer;
+}
+
+.cm-image img {
+  max-width: 100%;
+  border-radius: 8px;
+  display: block;
+  border: 1px solid var(--border);
+}
+
+.cm-image.is-block img {
+  margin: 0 auto;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06);
+  transition: box-shadow 0.15s ease;
+}
+
+.cm-image.is-block img:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* 点开后在图片上方加一行地址，图片本身保持原尺寸。光标离开这一行后整行去掉。 */
+.cm-image-url {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  height: calc(var(--editor-font-size) * var(--line-height));
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--editor-font-size);
+  line-height: var(--line-height);
+  text-align: left;
+  outline: none;
+}
+
+.cm-image.is-inline img {
+  max-height: 1.55em;
+  border-radius: 4px;
+}
+
+.cm-image-title {
+  display: block;
+  padding-top: 6px;
+  font-size: 12px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.cm-image-broken {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  color: var(--text-faint);
+  font-size: 12px;
+}
+
+.cm-table-wrap {
+  position: relative;
+  margin: 0 var(--gutter-x);
+  padding: calc(var(--block-gap) * 0.65) 0;
+  overflow: visible;
+  cursor: pointer;
+}
+
+.cm-table-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  /* 给滚动条留一点空隙，避免它紧贴表格底边框、看起来像把最后一行压窄了 */
+  padding-bottom: 2px;
+}
+
+/* 表格横向滚动用细滚动条：默认的 WebView2 滚动条带箭头、很粗，会盖住最后一行 */
+.cm-table-scroll::-webkit-scrollbar {
+  height: 7px;
+}
+
+.cm-table-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.cm-table-scroll::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.cm-table-wrap:hover .cm-table-scroll::-webkit-scrollbar-thumb,
+.cm-table-scroll:focus-within::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+}
+
+.cm-table-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+}
+
+/* 表格工具条：Typora 式，悬浮在表格上沿外侧的一条，左侧当前列对齐、右侧更多与删除。
+   top 用「段落间距 - 工具条高 - 4px」算：底边正好在表格上沿上方留一道缝，不压表头 */
+.cm-table-toolbar {
+  position: absolute;
+  z-index: 5;
+  top: calc(var(--block-gap) - 32px);
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 28px;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-bg);
+  box-shadow: 0 2px 10px rgba(20, 24, 32, 0.08);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.cm-table-tools {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.cm-table-wrap:hover .cm-table-toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.cm-table-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 5px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cm-table-btn:hover,
+.cm-table-btn.is-on {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.cm-table-btn svg {
+  display: block;
+}
+
+.cm-table-sep {
+  width: 1px;
+  height: 12px;
+  margin: 0 2px;
+  background: var(--border-strong);
+}
+
+.cm-table-wrap table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  font-size: 0.94em;
+}
+
+.cm-table-wrap th,
+.cm-table-wrap td {
+  position: relative;
+  border: 1px solid var(--border-strong);
+  padding: 7px 12px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.cm-table-wrap th {
+  background: var(--table-head-bg);
+  font-weight: 600;
+}
+
+/* 空格子没有行盒，行高会塌到只剩 padding，视觉上比填了内容的行矮一整行。
+   table-cell 上 min-height 不生效，这里用伪元素补一个零宽文本行：
+   高度自动跟随当前主题的 font-size / line-height，且伪元素内容不进 textContent，
+   不会污染选中复制与单元格就地编辑。 */
+.cm-table-wrap .is-empty::after {
+  content: "\200b";
+}
+
+/* 拖选 / Shift 扩选 / 整行选中的高亮，压过表头底色与斑马纹 */
+.cm-table-wrap th.is-selected,
+.cm-table-wrap td.is-selected {
+  background: var(--accent-soft);
+}
+
+/* 第一列左边缘的行选择把手：平时隐形，hover 才给出可点的提示。
+   绝对定位在 td 内，不新增表格列，列宽与对齐逻辑都不受影响。 */
+.cm-table-rowsel {
+  position: absolute;
+  z-index: 2;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 12px;
+  cursor: pointer;
+}
+.cm-table-rowsel:hover {
+  background: var(--accent-soft);
+  border-right: 2px solid var(--accent);
+}
+
+.cm-table-resize {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.cm-table-resize::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  right: 3px;
+  width: 1px;
+  background: transparent;
+}
+
+.cm-table-resize:hover::after,
+.cm-table-resize:active::after {
+  background: var(--accent);
+}
+
+.cm-table-wrap tbody tr:nth-child(even) {
+  background: var(--table-zebra);
+}
+
+/* 单元格里的行内标记复用正文那套 .cm-* 类，这里只补几处「格子语境」的差异：
+   链接不该显示成可点（点格子是进编辑），行内代码和图片别把行撑高 */
+.cm-table-wrap .cm-link {
+  cursor: inherit;
+}
+
+.cm-table-wrap .cm-inline-code {
+  padding: 0 0.28em;
+  font-size: 0.86em;
+}
+
+.cm-table-wrap .cm-cell-image {
+  max-height: 1.6em;
+  max-width: 100%;
+  vertical-align: middle;
+  border-radius: 3px;
+}
+
+.cm-table-wrap .cm-math.is-inline {
+  cursor: inherit;
+}
+
+/* 单元格就地编辑浮层：尺寸/字体由 JS 从 td 的计算样式抄过来，这里只管外观 */
+.cm-cell-editor {
+  position: fixed;
+  z-index: 90;
+  margin: 0;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  background: var(--panel-bg);
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  box-shadow: 0 2px 10px rgba(15, 20, 30, 0.18);
+  box-sizing: border-box;
+}
+
+.cm-math {
+  cursor: pointer;
+}
+
+.cm-math.is-inline {
+  display: inline-block;
+  margin: 0 0.2em;
+  padding: 0 2px;
+}
+
+.cm-math.is-display {
+  display: block;
+  margin: 0 var(--gutter-x);
+  padding: calc(var(--block-gap) * 0.65) 0;
+  text-align: center;
+  overflow-x: auto;
+}
+
+.cm-math.is-companion {
+  margin: 0 var(--gutter-x);
+  padding: 8px 12px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+
+.cm-math .katex {
+  font-size: 1.03em;
+}
+
+.cm-math-error {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+/* katex 懒加载完成前的公式源码占位 */
+.cm-math-pending {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  color: var(--fg-muted);
+}

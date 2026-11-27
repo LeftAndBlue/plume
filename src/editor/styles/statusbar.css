@@ -1,0 +1,227 @@
+/* ---------------- 状态栏 ---------------- */
+
+#statusbar {
+  height: var(--status-height);
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 12px 0 6px;
+  border-top: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+}
+
+/* 左下角的侧栏开关：常态几乎隐形，悬停才显形，不抢正文的注意力 */
+.st-tool {
+  width: 30px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-faint);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.st-tool:hover {
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+#st-count {
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+#st-count:hover {
+  background: var(--chrome-hover);
+  color: var(--text);
+}
+
+/* 侧栏开着且正处于这个面板时点亮。
+   只用中性填充：之前那圈 accent 描边在浅色主题下会泛蓝，和状态栏底色叠在一起很脏。 */
+.st-tool.is-on {
+  background: var(--chrome-active);
+  color: var(--text);
+}
+
+.st-spacer {
+  flex: 1;
+}
+
+.st-dirty {
+  color: var(--accent);
+}
+
+.st-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ft-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+#st-hint {
+  transition: opacity 0.2s ease;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#st-hint.is-flash {
+  color: var(--accent);
+}
+
+/* 保存失败常驻提示：不随 flash 消失，点击重试保存 */
+.st-save-error {
+  border: none;
+  border-radius: 4px;
+  padding: 2px 8px;
+  background: var(--danger-bg, rgba(229, 72, 77, 0.14));
+  color: var(--danger, #e5484d);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.st-save-error:hover {
+  background: var(--danger-bg-hover, rgba(229, 72, 77, 0.24));
+}
+
+/* ---------------- CodeMirror 容器 ---------------- */
+
+.cm-editor {
+  position: relative;
+  height: 100%;
+  background: transparent;
+  color: var(--text);
+}
+
+.cm-editor.cm-focused {
+  outline: none !important;
+}
+
+/* 选择器要比 CodeMirror 自带的 .cm-scroller 更具体。
+   它在运行时注入 overflow-x: auto，和我们同级时后写的胜出，
+   光标落进代码块时那几个像素的横向滚动会作用到整栏正文。
+   纵向滚动条大约 6px。正文栏是居中的，滚动条出现或消失，
+   整栏就会跟着挪大约一半。点进代码块时常会改到文档高度
+   （空行被收矮），滚动条正好在这一下切换。
+   stable 把这 6px 始终留出来，栏的位置就不再跟着跳。
+   不能用 overflow-x: clip：和 overflow-y: auto 配在一起会被算成 hidden。 */
+.cm-editor > .cm-scroller {
+  justify-content: safe center;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  /* 快速滚动到边界时不再把滚动链式传给外壳，避免触发布局/窗口状态抖动。 */
+  overscroll-behavior: contain;
+}
+
+.cm-scroller::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.cm-scroller::-webkit-scrollbar-track {
+  background: transparent;
+}
+.cm-scroller::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 6px;
+}
+.cm-scroller:hover::-webkit-scrollbar-thumb,
+.cm-scroller.is-scrolling::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+}
+.cm-scroller:hover::-webkit-scrollbar-thumb:hover,
+.cm-scroller.is-scrolling::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover);
+}
+
+.cm-editor .cm-content {
+  width: 100%;
+  min-width: 0;
+  max-width: var(--content-width);
+  /* 横向留白不在这儿，见下面 .cm-line 的注释。
+     底部 50vh 让最后一行可以停在屏幕中上部，不必贴着状态栏。 */
+  padding: 54px 0 50vh;
+  font-family: var(--font-body);
+  font-size: var(--editor-font-size);
+  line-height: var(--line-height);
+  letter-spacing: 0.015em;
+  font-feature-settings: "kern" 1, "liga" 1, "cv02", "cv03", "cv04", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  caret-color: var(--caret);
+}
+
+body.focus-mode .cm-editor .cm-content {
+  max-width: 640px;
+}
+
+/**
+ * 正文栏的左右留白，为什么放在「行」上而不是「内容盒」上。
+ *
+ * CM 画整行选区时（rectanglesForRange），左右边界是
+ *   contentRect.left + 首行的 paddingLeft ～ contentRect.right - 首行的 paddingRight
+ * 也就是说它认为横向留白属于「行」，不属于「内容盒」。
+ * 我们原来是 .cm-content { padding: 0 40px }，CM 只看到首行 padding 为 0，
+ * 于是把整行高亮铺满内容盒（多出两侧各 40px）；正文文字却缩在里面，
+ * 选中代码块时蓝底比灰框宽出一圈，看着像「高亮跑到外面去了」。
+ * 把留白搬到行上，文字位置一个字都不动，高亮自动对齐正文栏。
+ * 块级 widget（表格/图片/公式/目录/分割线）不是 .cm-line，得各自补同样的边距。
+ */
+.cm-editor .cm-line {
+  padding: 0 var(--gutter-x);
+}
+
+/* 光标所在行：源码显形，给一点视觉提示 */
+.cm-editor .cm-activeLine {
+  background: transparent;
+}
+
+/**
+ * 选区默认铺在正文「下面」。
+ *
+ * CM 给每个自绘图层写的是负的 z-index（选图层 -1、光标层 150），意思是
+ * 「高亮垫在文字底下，别糊住字」。代价是：任何带**不透明背景**的行都会把
+ * 高亮整块盖掉 —— 代码块、引用块、表格都是。选中一段跨过代码块的文字时，
+ * 外面（没有背景的正文）蓝汪汪一片，代码块里却干干净净，看着就像
+ * 「代码块里的内容选不住，高亮全跑到外面去了」。
+ *
+ * 把这一层抬到正文之上。配色相应改成半透明（--sel-bg），文字压在高亮下面
+ * 依然看得清；这跟浏览器原生选区的观感一致，只是我们多了一点控制权。
+ */
+.cm-selectionLayer {
+  z-index: 1 !important;
+}
+
+/* 默认选区层按首行 padding 把整行铺满，代码块的行号和灰框空白会一起变蓝。
+   那一层的色块藏掉，改由 .cm-selection-fit 按每行代码文字的边界重画。 */
+.cm-selectionLayer > .cm-selectionBackground {
+  visibility: hidden !important;
+}
+
+.cm-selection-fit {
+  z-index: 1 !important;
+  pointer-events: none;
+}
