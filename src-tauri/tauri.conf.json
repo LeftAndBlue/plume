@@ -4,7 +4,7 @@
   "identifier": "com.plume.editor",
   "build": {
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://127.0.0.1:1420",
     "beforeDevCommand": "npm run dev",
     "beforeBuildCommand": "npm run build"
   },
@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost data: blob: http: https:; font-src 'self' asset: http://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost ws://localhost:1420; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' asset: http://asset.localhost; img-src 'self' asset: http://asset.localhost data: blob: http: https:; font-src 'self' asset: http://asset.localhost data:; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:1420; worker-src 'self' blob:; frame-src 'none'; object-src 'none'; base-uri 'self'; form-action 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": [

@@ -27,7 +27,17 @@ const kaTeXRawPlugin = {
 export default defineConfig({
   plugins: [vue(), kaTeXRawPlugin],
   clearScreen: false,
-  server: { port: 1420, strictPort: true },
+  server: {
+    host: '127.0.0.1',
+    port: 1420,
+    strictPort: true,
+    watch: {
+      ignored: ['**/src-tauri/**', '**/dist/**'],
+    },
+    hmr: {
+      host: '127.0.0.1',
+    },
+  },
   envPrefix: ['VITE_', 'TAURI_'],
   build: {
     target: 'chrome120',
