@@ -65,6 +65,7 @@ function createStudio() {
     },
 
     openDialog: () => invoke('file_open'),
+    openFolderDialog: () => invoke('folder_open'),
     pickSettingsFile: () => invoke('settings_import_pick'),
     readFile: (p) => invoke('file_read', { p }),
     readFileBytes: async (p) => new Uint8Array(await invoke('file_read_bytes', { p })),

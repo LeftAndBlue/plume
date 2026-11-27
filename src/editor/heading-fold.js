@@ -7,6 +7,7 @@
 import { codeFolding, foldEffect, foldGutter, foldService, unfoldEffect } from '@codemirror/language';
 import { keymap } from '@codemirror/view';
 import { computeHeadingFoldLines, headingLevelOfLine } from './extrasText.js';
+import { t } from '../i18n.js';
 
 export { computeHeadingFoldLines, headingLevelOfLine };
 
@@ -82,8 +83,8 @@ export function headingFoldExtension() {
       placeholderDOM(view, onclick) {
         const el = document.createElement('span');
         el.className = 'cm-heading-fold-pill';
-        el.textContent = '⋯ 展开章节';
-        el.title = '点击展开折叠的章节内容';
+        el.textContent = t('fold.pill');
+        el.title = t('fold.pillTitle');
         el.addEventListener('click', onclick);
         return el;
       },
@@ -93,7 +94,7 @@ export function headingFoldExtension() {
         const el = document.createElement('span');
         el.className = 'cm-heading-fold-marker' + (open ? ' is-open' : ' is-closed');
         el.textContent = open ? '▾' : '▸';
-        el.title = open ? '折叠此章节' : '展开此章节';
+        el.title = open ? t('fold.collapse') : t('fold.expand');
         return el;
       },
     }),

@@ -30,18 +30,24 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
       : "未命名";
   }
 
+  const isCancelled = (err) => String(err?.message || err || "").trim() === "已取消";
+
   async function saveExport(name, payload, mime) {
     if (window.studio?.exportFile) {
       // Rust 侧 ExportFilePayload 的字段是 s/kind/ext/bytes：
       // 文本类导出（RTF/LaTeX）统一编码成字节走 raw 写入，不做 HTML 物化。
       const bytes = payload.bytes || new TextEncoder().encode(payload.text || "");
-      const p = await window.studio.exportFile({
-        bytes,
-        s: name,
-        kind: payload.filterName || "文件",
-        ext: (payload.extensions && payload.extensions[0]) || undefined,
-      });
-      if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      try {
+        const p = await window.studio.exportFile({
+          bytes,
+          s: name,
+          kind: payload.filterName || "文件",
+          ext: (payload.extensions && payload.extensions[0]) || undefined,
+        });
+        if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      } catch (err) {
+        if (!isCancelled(err)) throw err;
+      }
       return;
     }
     browserDownload(name, payload.bytes || payload.text || "", mime);
@@ -51,8 +57,12 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
     const name = exportBaseName() + ".html";
     const html = await exportHtmlReady(docText(), exportOptions("screen", { title: name }));
     if (window.studio) {
-      const p = await window.studio.exportHtml(html, name, state.dir);
-      if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      try {
+        const p = await window.studio.exportHtml(html, name, state.dir);
+        if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      } catch (err) {
+        if (!isCancelled(err)) throw err;
+      }
     } else {
       browserDownload(name, html, "text/html");
     }
@@ -62,8 +72,12 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
     const name = exportBaseName() + ".html";
     const html = await exportHtmlReady(docText(), { title: name, bare: true });
     if (window.studio) {
-      const p = await window.studio.exportHtml(html, name, state.dir);
-      if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      try {
+        const p = await window.studio.exportHtml(html, name, state.dir);
+        if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      } catch (err) {
+        if (!isCancelled(err)) throw err;
+      }
     } else browserDownload(name, html, "text/html");
   }
 
@@ -71,8 +85,12 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
     const name = exportBaseName() + ".docx";
     const bytes = markdownToDocx(docText());
     if (window.studio?.exportDocx) {
-      const p = await window.studio.exportDocx(bytes, name);
-      if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      try {
+        const p = await window.studio.exportDocx(bytes, name);
+        if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+      } catch (err) {
+        if (!isCancelled(err)) throw err;
+      }
     } else {
       browserDownload(name, bytes, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
     }
@@ -112,6 +130,7 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
       return;
     }
     const name = exportBaseName() + ".png";
+    flash("正在生成长图，请稍候…");
     const html = await exportHtmlReady(
       docText(),
       exportOptions("screen", { title: name, readyScript: true }),
@@ -120,7 +139,7 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
       const p = await window.studio.exportPng(html, name, state.dir);
       if (p) flash("已导出 " + p.split(/[\\/]/).pop());
     } catch (err) {
-      flash("导出图片失败：" + (err && err.message ? err.message : err));
+      if (!isCancelled(err)) flash("导出图片失败：" + (err && err.message ? err.message : err));
     }
   }
 
@@ -130,12 +149,17 @@ export function createExportCommands({ state, view, flash, browserDownload }) {
       return;
     }
     const name = exportBaseName() + ".pdf";
+    flash("正在生成 PDF，请稍候…");
     const html = await exportHtmlReady(
       docText(),
       exportOptions("print", { title: name, readyScript: true }),
     );
-    const p = await window.studio.exportPdf(html, name, state.dir);
-    if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+    try {
+      const p = await window.studio.exportPdf(html, name, state.dir);
+      if (p) flash("已导出 " + p.split(/[\\/]/).pop());
+    } catch (err) {
+      if (!isCancelled(err)) flash("导出 PDF 失败：" + (err && err.message ? err.message : err));
+    }
   }
 
   return {

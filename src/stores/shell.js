@@ -38,6 +38,10 @@ export const useShellStore = defineStore('shell', {
     dirty: false,
     words: 0,
     lines: 0,
+    cursorLine: 1,
+    cursorCol: 1,
+    encoding: 'utf-8',
+    eol: '\n',
     wordGoal: 0,
     hint: '',
     /** 最近一次保存失败的错误信息；非空时状态栏常驻提示并提供重试。 */
@@ -76,12 +80,19 @@ export const useShellStore = defineStore('shell', {
       this.dir = dir;
       this.fileName = path ? path.split(/[\\/]/).pop() : '未命名.md';
     },
+    setDir(dir) {
+      this.dir = dir || null;
+    },
     setDirty(v) {
       this.dirty = v;
     },
-    setStatus({ words, lines }) {
+    setStatus({ words, lines, cursorLine, cursorCol, encoding, eol }) {
       this.words = words;
       this.lines = lines;
+      if (cursorLine != null) this.cursorLine = cursorLine;
+      if (cursorCol != null) this.cursorCol = cursorCol;
+      if (encoding) this.encoding = encoding;
+      if (eol) this.eol = eol;
     },
     setWordGoal(goal) {
       this.wordGoal = Math.max(0, Math.round(Number(goal) || 0));

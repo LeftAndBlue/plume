@@ -9,6 +9,11 @@ const shell = useShellStore();
 const run = (cmd) => shell.runtime?.run(cmd);
 
 const goalInfo = computed(() => computeWordGoalProgress(shell.words, shell.wordGoal));
+const formatBadge = computed(() => {
+  const enc = String(shell.encoding || 'utf-8').toUpperCase();
+  const eol = shell.eol === '\r\n' ? 'CRLF' : 'LF';
+  return `${enc} · ${eol}`;
+});
 </script>
 
 <template>
@@ -64,6 +69,8 @@ const goalInfo = computed(() => computeWordGoalProgress(shell.words, shell.wordG
       <template v-else>{{ t('status.words', { n: shell.words.toLocaleString() }) }}</template>
     </span>
     <span id="st-lines">{{ t('status.lines', { n: shell.lines.toLocaleString() }) }}</span>
+    <span id="st-cursor" class="st-meta" :title="t('status.cursorTitle')">{{ t('status.cursor', { line: shell.cursorLine, col: shell.cursorCol }) }}</span>
+    <span id="st-format" class="st-meta" :title="t('status.formatTitle')">{{ formatBadge }}</span>
     <span id="st-hint" :class="{ 'is-flash': !!shell.hint }">{{ shell.hint }}</span>
   </footer>
 </template>

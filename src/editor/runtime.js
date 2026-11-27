@@ -868,8 +868,17 @@ function scheduleStatus() {
 function updateStatus(extra) {
   const { view: av, state: as } = activeDocContext();
   const text = av.state.doc.toString();
+  const head = av.state.selection.main.head;
+  const line = av.state.doc.lineAt(Math.max(0, Math.min(head, av.state.doc.length)));
   shell.setWordGoal(getWordGoal(as.path));
-  shell.setStatus({ words: countWords(text), lines: av.state.doc.lines });
+  shell.setStatus({
+    words: countWords(text),
+    lines: av.state.doc.lines,
+    cursorLine: line.number,
+    cursorCol: head - line.from + 1,
+    encoding: as.encoding,
+    eol: as.eol,
+  });
   if (extra !== undefined) shell.setHint(extra);
 }
 
@@ -985,21 +994,21 @@ function renderStatsPop() {
   const gp = computeWordGoalProgress(words, goal);
   const goalStatus = gp.goal
     ? gp.reached
-      ? `已达成（${gp.percent}%）`
-      : `${gp.percent}% · 还差 ${gp.remaining.toLocaleString()} 字`
-    : "未设置";
+      ? t("stats.goalReached", { p: gp.percent })
+      : t("stats.goalRemain", { p: gp.percent, r: gp.remaining.toLocaleString() })
+    : t("stats.goalUnset");
   pop.innerHTML =
-    "<h4>文档统计</h4>" +
-    row("字数", words.toLocaleString()) +
-    row("字符", chars.toLocaleString()) +
-    row("字符（不含空格）", noWs.toLocaleString()) +
-    row("段落", paras.toLocaleString()) +
-    row("行数", lines.toLocaleString()) +
-    row("阅读时间", mins ? `约 ${mins} 分钟` : "不到 1 分钟") +
+    `<h4>${t("stats.title")}</h4>` +
+    row(t("stats.words"), words.toLocaleString()) +
+    row(t("stats.chars"), chars.toLocaleString()) +
+    row(t("stats.charsNoWs"), noWs.toLocaleString()) +
+    row(t("stats.paragraphs"), paras.toLocaleString()) +
+    row(t("stats.lines"), lines.toLocaleString()) +
+    row(t("stats.readTime"), mins ? t("stats.readMins", { m: mins }) : t("stats.readLessMin")) +
     `<div class="stats-goal">` +
-    `<label class="stats-goal-row"><span>单篇字数目标</span>` +
-    `<input id="stats-goal-input" type="number" min="0" step="100" value="${gp.goal || ""}" placeholder="如 2000"></label>` +
-    `<div class="stats-goal-meta"><span>进度</span><b>${goalStatus}</b></div>` +
+    `<label class="stats-goal-row"><span>${t("stats.goalLabel")}</span>` +
+    `<input id="stats-goal-input" type="number" min="0" step="100" value="${gp.goal || ""}" placeholder="${t("stats.goalPlaceholder")}"></label>` +
+    `<div class="stats-goal-meta"><span>${t("stats.goalProgress")}</span><b>${goalStatus}</b></div>` +
     `<div class="stats-goal-track"><div class="stats-goal-fill${gp.reached ? " is-reached" : ""}" style="width:${gp.percent}%"></div></div>` +
     `</div>`;
   const input = pop.querySelector("#stats-goal-input");
@@ -1044,6 +1053,12 @@ document.addEventListener("mousedown", (e) => {
   if (e.target instanceof Element && e.target.closest("#stats-pop, #st-count"))
     return;
   pop.hidden = true;
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  const pop = document.getElementById("stats-pop");
+  if (pop && !pop.hidden) pop.hidden = true;
 });
 
 let autosaveTimer = null;
@@ -1334,12 +1349,16 @@ async function askText(title, initial = "", fieldLabel = "名称", placeholder =
 }
 
 async function createFsEntry(dir, directory) {
-  if (!state.dir || !window.studio?.createFsEntry) return flash("请先打开一个文档目录");
+  const rootDir = state.dir || shell.dir;
+  if (!rootDir || !window.studio?.createFsEntry) return flash("请先打开一个文档目录");
   const name = await askText(directory ? "新建文件夹" : "新建 Markdown 文档", directory ? "新建文件夹" : "未命名.md");
   if (!name) return;
   try {
-    await window.studio.createFsEntry(state.dir, dir, name, directory);
+    const created = await window.studio.createFsEntry(rootDir, dir || rootDir, name, directory);
     shell.bumpFileTree();
+    if (!directory && created) {
+      await openTreePath(created);
+    }
     flash(directory ? "文件夹已创建" : "文档已创建");
   } catch (err) {
     flash("创建失败：" + (err?.message || err));
@@ -3471,6 +3490,7 @@ function buildPaletteCommands() {
     { category: "大纲", label: "展开当前章节（H1–H3）", cmd: "unfold-heading", accel: ACCEL["unfold-heading"], keywords: "unfold 展开 标题" },
     { category: "大纲", label: "折叠全部标题章节", cmd: "fold-all-headings", keywords: "fold all 全部折叠" },
     { category: "大纲", label: "展开全部标题章节", cmd: "unfold-all-headings", keywords: "unfold all 全部展开" },
+    { category: "文件", label: t("menu.openFolder"), cmd: "open-folder", keywords: "folder workspace 打开文件夹 目录" },
     { category: "文件", label: "恢复未保存草稿", cmd: "draft-recovery", keywords: "draft recovery 草稿 恢复" },
     { category: "文件", label: "跨文件搜索与替换", cmd: "search-files", accel: ACCEL["search-files"], keywords: "search replace 搜索" },
     { category: "设置", label: "打开外观与编辑器设置", cmd: "settings", keywords: "settings preferences 设置" },
@@ -3490,11 +3510,13 @@ const quickOpen = createQuickOpen({
   state,
   openSheet,
   flash,
-  openFile,
   settleCurrentDocument,
   openDiskDoc,
+  openSearchHit: openSearchedFile,
   samePath,
   getCommands: buildPaletteCommands,
+  getRecentFiles: () => readRecent(),
+  getOpenTabs: () => tabs.documentTabs,
   runCommand: (cmd) => run(cmd),
 });
 
@@ -3615,9 +3637,20 @@ const updater = createUpdater({
   settle: settleCurrentDocument,
 });
 
+async function openFolder() {
+  if (!window.studio?.openFolderDialog) return;
+  const dir = await window.studio.openFolderDialog();
+  if (!dir) return;
+  shell.setDir(dir);
+  setSideView("files");
+  setSidebar(true);
+  shell.bumpFileTree();
+}
+
 const commands = {
   new: newDoc,
   open: openFile,
+  "open-folder": openFolder,
   "quick-open": quickOpen,
   save: () => activeDocContext().save(),
   "save-as": saveAs,
@@ -4113,6 +4146,7 @@ const MENUS = [
       return [
         { label: t("menu.new"), cmd: "new", accel: ACCEL.new },
         { label: t("menu.open"), cmd: "open", accel: ACCEL.open },
+        { label: t("menu.openFolder"), cmd: "open-folder" },
         { label: t("menu.quickOpen"), cmd: "quick-open", accel: ACCEL["quick-open"] },
         ...(recent.length ? [{ type: "sep" }, ...recent] : []),
         { type: "sep" },
@@ -4607,6 +4641,7 @@ async function reloadAllModifiedFiles(paths) {
 return {
   run,
   openPath: openTreePath,
+  openFolder,
   reloadModifiedFiles: reloadAllModifiedFiles,
   openSearchHit: openSearchedFile,
   openTab,

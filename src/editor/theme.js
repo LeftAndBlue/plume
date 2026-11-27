@@ -122,6 +122,19 @@ export function updateAppearance(patch) {
   applyAppearance();
 }
 
+export function resetAppearance() {
+  currentPrefs = { ...DEFAULT_PREFS };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(currentPrefs));
+    localStorage.setItem(LEGACY_KEY, currentPrefs.theme);
+  } catch {
+    /* ignore */
+  }
+  applyAppearance();
+  document.dispatchEvent(new CustomEvent('theme-change', { detail: { id: currentPrefs.theme } }));
+  return getAppearance();
+}
+
 export async function applyTheme(id, { silent = false } = {}) {
   if (!THEMES.some((t) => t.id === id)) return;
   updateAppearance({ theme: id });

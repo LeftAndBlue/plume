@@ -8,6 +8,7 @@ import {
   applyTheme,
   currentThemeId,
   getAppearance,
+  resetAppearance,
   updateAppearance,
 } from './theme.js';
 import { LOCALES, i18n, setLocale, t } from '../i18n.js';
@@ -57,11 +58,47 @@ SOFTWARE.`,
 
 /** 打开设置面板：content 可以是 HTML 字符串，也可以是 (body, close) 回调（用于需要绑事件的询问面板）。 */
 let sheetOnClose = null;
+let lastFocusedEl = null;
+let sheetKeyHandler = null;
+
+function bindSheetKeys(panel) {
+  if (sheetKeyHandler) return;
+  sheetKeyHandler = (e) => {
+    if (panel.hidden) return;
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      closeSettings();
+      return;
+    }
+    if (e.key === "Tab") {
+      const card = panel.querySelector(".settings-card");
+      if (!card) return;
+      const focusables = [...card.querySelectorAll('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+        .filter((el) => !el.hidden && el.offsetParent !== null);
+      if (!focusables.length) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && (document.activeElement === first || !card.contains(document.activeElement))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (document.activeElement === last || !card.contains(document.activeElement))) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  };
+  document.addEventListener("keydown", sheetKeyHandler, true);
+}
+
 function openSheet(title, content, options) {
   const panel = document.getElementById("settings");
   const body = document.getElementById("settings-body");
   const heading = document.getElementById("settings-title");
   if (!panel || !body) return;
+  if (panel.hidden) {
+    lastFocusedEl = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  }
   if (heading) heading.textContent = title;
   panel.querySelector('.settings-card')?.classList.toggle("is-wide", !!options?.wide);
   sheetOnClose = typeof options?.onClose === "function" ? options.onClose : null;
@@ -69,6 +106,7 @@ function openSheet(title, content, options) {
   if (typeof content === "function") content(body, closeSettings);
   else body.innerHTML = content ?? "";
   panel.hidden = false;
+  bindSheetKeys(panel);
 }
 
 function showLicense() {
@@ -140,7 +178,10 @@ async function openSettings() {
       field(t("settings.firstLineIndent"), `<input data-k="firstLineIndent" type="checkbox"${prefs.firstLineIndent ? " checked" : ""}>`) +
       field(t("settings.codeLineNumbers"), `<input data-k="codeLineNumbers" type="checkbox"${prefs.codeLineNumbers ? " checked" : ""}>`) +
       `<p class="settings-note">${t("settings.appearanceNote")}</p>` +
+      `<div class="settings-actions">` +
       `<button type="button" id="open-theme-store" class="settings-btn">${t("settings.openThemeStore")}</button>` +
+      `<button type="button" id="reset-appearance" class="settings-btn">${t("settings.resetAppearance")}</button>` +
+      `</div>` +
       `<p class="settings-group">${t("settings.exportGroup")}</p>` +
       field(
         t("settings.exportTemplate"),
@@ -213,6 +254,11 @@ async function openSettings() {
     importSettings().catch((err) => flash("导入设置失败：" + (err && err.message ? err.message : err)));
   });
   document.getElementById("open-theme-store")?.addEventListener("click", openThemeStore);
+  document.getElementById("reset-appearance")?.addEventListener("click", () => {
+    resetAppearance();
+    flash(t("settings.appearanceReset"));
+    openSettings();
+  });
   // 切换语言：持久化 + 通知菜单栏，再按新语言重画面板
   document.getElementById("locale-select")?.addEventListener("change", (e) => {
     setLocale(e.target.value);
@@ -366,8 +412,19 @@ function closeSettings() {
   const panel = document.getElementById("settings");
   const hook = sheetOnClose;
   sheetOnClose = null;
+  if (sheetKeyHandler) {
+    document.removeEventListener("keydown", sheetKeyHandler, true);
+    sheetKeyHandler = null;
+  }
   if (panel) panel.hidden = true;
   if (hook) hook();
+  const prev = lastFocusedEl;
+  lastFocusedEl = null;
+  if (prev && prev.isConnected && typeof prev.focus === "function") {
+    prev.focus();
+  } else {
+    document.querySelector("#editor-host .cm-content")?.focus();
+  }
 }
 
   return {

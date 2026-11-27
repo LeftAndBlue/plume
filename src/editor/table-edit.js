@@ -86,6 +86,7 @@ export async function openCellEditor(view, td) {
     left: Math.round(rect.left) + 'px',
     top: Math.round(rect.top) + 'px',
     width: Math.round(rect.width) + 'px',
+    minHeight: Math.round(rect.height) + 'px',
     height: Math.round(rect.height) + 'px',
     fontFamily: cs.fontFamily,
     fontSize: cs.fontSize,
@@ -95,6 +96,15 @@ export async function openCellEditor(view, td) {
     padding: cs.padding,
     color: cs.color,
   });
+
+  const syncHeight = () => {
+    ta.style.height = 'auto';
+    const nextH = Math.max(Math.round(rect.height), ta.scrollHeight);
+    const capped = Math.min(320, nextH);
+    ta.style.height = capped + 'px';
+    ta.style.overflowY = nextH > 320 ? 'auto' : 'hidden';
+  };
+  ta.addEventListener('input', syncHeight);
 
   ta.addEventListener('mousedown', (e) => e.stopPropagation());
   ta.addEventListener('keydown', (e) => {
@@ -134,6 +144,7 @@ export async function openCellEditor(view, td) {
 
   ta.focus();
   ta.select();
+  syncHeight();
 
   // 滚动/改窗口时让浮层跟着单元格走（比「一滚就关」更接近直觉），
   // 单元格整体离开视口才收掉。

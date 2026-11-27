@@ -151,7 +151,10 @@ provide('fileTree', {
     <template v-else>
       <p v-if="!shell.dir" class="ft-empty">
         {{ t('tree.noDoc') }}
-        <button type="button" @click="shell.runtime?.run('open')">{{ t('tree.openFile') }}</button>
+        <span class="ft-empty-actions">
+          <button type="button" @click="shell.runtime?.run('open')">{{ t('tree.openFile') }}</button>
+          <button v-if="shell.runtime?.openFolder" type="button" @click="shell.runtime?.run('open-folder')">{{ t('tree.openFolder') }}</button>
+        </span>
       </p>
       <template v-else>
         <div class="ft-root" :title="shell.dir">{{ shell.dir.split(/[\\/]/).pop() || shell.dir }}</div>

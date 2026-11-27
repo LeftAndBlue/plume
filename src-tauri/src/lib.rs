@@ -190,6 +190,22 @@ async fn file_open(app: AppHandle) -> Result<Option<fs_ops::Doc>, String> {
 }
 
 #[tauri::command]
+async fn folder_open(app: AppHandle) -> Result<Option<String>, String> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    app.dialog()
+        .file()
+        .set_title("打开文件夹")
+        .pick_folder(move |f| {
+            let _ = tx.send(f.and_then(|f| f.into_path().ok()));
+        });
+    let path = tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .ok()
+        .flatten();
+    Ok(path.map(|p| p.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 fn file_read(p: String) -> Result<fs_ops::Doc, String> {
     fs_ops::read_doc(&p).map_err(cmd_err)
 }
@@ -655,6 +671,7 @@ pub fn run() {
             theme_paths,
             theme_open_folder,
             file_open,
+            folder_open,
             file_read,
             file_read_bytes,
             settings_import_pick,

@@ -44,10 +44,48 @@ function showContextMenu(event, items) {
   const outside = (e) => {
     if (!openMenus.some((m) => m.contains(e.target))) close();
   };
+  const focusablesOf = (menu) =>
+    [...menu.querySelectorAll("button:not(:disabled)")].filter((b) => b.offsetParent !== null);
   const keys = (e) => {
+    if (!openMenus.length) return;
     if (e.key === "Escape") {
       e.preventDefault();
       close();
+      return;
+    }
+    const topMenu = openMenus[openMenus.length - 1];
+    const btns = focusablesOf(topMenu);
+    if (!btns.length) return;
+    const activeEl = document.activeElement;
+    const idx = btns.indexOf(activeEl);
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      btns[(idx + 1 + btns.length) % btns.length].focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      btns[(idx - 1 + btns.length) % btns.length].focus();
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      btns[0].focus();
+    } else if (e.key === "End") {
+      e.preventDefault();
+      btns[btns.length - 1].focus();
+    } else if (e.key === "ArrowRight") {
+      if (idx >= 0 && btns[idx]._openSubmenu) {
+        e.preventDefault();
+        btns[idx]._openSubmenu();
+        const subMenu = openMenus[openMenus.length - 1];
+        if (subMenu && subMenu !== topMenu) focusablesOf(subMenu)[0]?.focus();
+      }
+    } else if (e.key === "ArrowLeft" && openMenus.length > 1) {
+      e.preventDefault();
+      const popped = openMenus.pop();
+      const parentAnchor = popped?._parentAnchor;
+      popped?.remove();
+      parentAnchor?.focus();
+    } else if ((e.key === "Enter" || e.key === " ") && idx >= 0) {
+      e.preventDefault();
+      btns[idx].click();
     }
   };
 
@@ -167,6 +205,7 @@ function showContextMenu(event, items) {
         const openSubmenu = () => {
           closeSubmenu();
           const sub = createMenu(item.children, true);
+          sub._parentAnchor = btn;
           document.body.appendChild(sub);
           const btnRect = btn.getBoundingClientRect();
           let left = btnRect.right + 4;
@@ -188,6 +227,7 @@ function showContextMenu(event, items) {
           activeChildMenu = sub;
           activeChildAnchor = btn;
         };
+        btn._openSubmenu = openSubmenu;
 
         btn.addEventListener("mouseenter", () => {
           clearTimeout(hoverTimer);

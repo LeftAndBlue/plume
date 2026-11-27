@@ -126,6 +126,7 @@ function makeQuickInsertPlugin(onCommand) {
         this.el.appendChild(btn);
       });
       this.el.hidden = false;
+      this.el.children[index]?.scrollIntoView({ block: 'nearest' });
     }
 
     position(pos) {

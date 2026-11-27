@@ -557,9 +557,12 @@ body.alt-mode .mb-mnemonic {
   align-items: stretch;
   min-width: 0;
   overflow-x: auto;
+  scrollbar-width: none;
   border-bottom: 1px solid var(--chrome-border);
   background: var(--chrome-bg);
 }
+
+#document-tabs::-webkit-scrollbar { display: none; }
 
 #document-tabs[hidden] { display: none; }
 
@@ -569,8 +572,11 @@ body.alt-mode .mb-mnemonic {
 .document-tab-open { flex: 1; min-width: 0; height: 100%; padding: 0 4px 0 12px; border: 0; background: transparent; color: inherit; display: inline-flex; align-items: center; gap: 5px; overflow: hidden; cursor: pointer; }
 .document-tab-split-icon { flex: 0 0 auto; color: var(--accent); opacity: 0.9; }
 .document-tab-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.document-tab-dirty { flex: 0 0 auto; font-size: 9px; line-height: 1; color: var(--accent); }
 .document-tab-close { flex: 0 0 26px; height: 100%; border: 0; background: transparent; color: inherit; cursor: pointer; opacity: 0.6; }
 .document-tab-close:hover { opacity: 1; color: var(--accent); }
+.document-tab-add { flex: 0 0 30px; height: 100%; border: 0; background: transparent; color: var(--text-muted); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; transition: background-color 0.12s ease, color 0.12s ease; }
+.document-tab-add:hover { background: var(--chrome-hover); color: var(--text); }
 
 #editor-area {
   flex: 1 1 auto;
@@ -1393,6 +1399,19 @@ body[data-side="outline"] #outline {
 
 .st-dirty {
   color: var(--accent);
+}
+
+.st-meta {
+  color: var(--text-faint);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.ft-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 #st-hint {

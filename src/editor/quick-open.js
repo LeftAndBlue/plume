@@ -1,7 +1,7 @@
 /**
  * 快速打开与命令面板（Ctrl+Shift+P）：
- * - 普通输入：在当前文档所在目录内按文件名 / 内容搜索并打开
- * - 以 `>` 开头：切换为命令面板，直接搜索并执行编辑器命令（切主题、导出 PDF、公众号复制、中英文加空格、专注模式等）
+ * - 普通输入：有目录时在目录内搜文件名/正文，无目录或未输入时展示已打开标签与最近文档
+ * - 以 `>` 开头：切换为命令面板，直接搜索并执行编辑器命令
  */
 import { t } from "../i18n.js";
 
@@ -12,17 +12,41 @@ export function createQuickOpen({
   state,
   openSheet,
   flash,
-  openFile,
   settleCurrentDocument,
   openDiskDoc,
+  openSearchHit,
   samePath,
   getCommands = () => [],
+  getRecentFiles = () => [],
+  getOpenTabs = () => [],
   runCommand = () => {},
 }) {
+  const baseName = (p) => String(p || "").split(/[\\/]/).pop() || p;
+  const dirName = (p) => String(p || "").replace(/[\\/][^\\/]*$/, "");
+
+  function buildFallbackFiles() {
+    const out = [];
+    const seen = [];
+    const add = (p, sourceLabel) => {
+      if (!p || samePath(p, state.path) || seen.some((x) => samePath(x, p))) return;
+      seen.push(p);
+      out.push({
+        path: p,
+        name: baseName(p),
+        dir: dirName(p),
+        sourceLabel,
+      });
+    };
+    for (const tab of getOpenTabs() || []) add(tab.path, t("quick.openTabTag"));
+    for (const p of getRecentFiles() || []) add(p, t("quick.recentTag"));
+    return out;
+  }
+
   return function quickOpen({ initialValue = "" } = {}) {
     const root = state.dir;
     const hasFileSearch = !!(window.studio && root);
-    const startValue = initialValue || (hasFileSearch ? "" : "> ");
+    const fallbackFiles = buildFallbackFiles();
+    const startValue = initialValue || (hasFileSearch || fallbackFiles.length ? "" : "> ");
 
     openSheet(t("quick.title"), (body, close) => {
       const wrap = document.createElement("div");
@@ -31,16 +55,14 @@ export function createQuickOpen({
       input.type = "text";
       input.className = "quick-open-input";
       input.value = startValue;
-      input.placeholder = hasFileSearch
-        ? "输入文件名/正文搜索，或输入 > 搜索命令…"
-        : "输入 > 搜索命令（切主题、导出、排版、专注模式…）";
+      input.placeholder = hasFileSearch ? t("quick.placeholder") : t("quick.placeholderNoDir");
       input.setAttribute("aria-label", t("quick.aria"));
       const list = document.createElement("div");
       list.className = "quick-open-list";
       list.setAttribute("role", "listbox");
       const hint = document.createElement("div");
       hint.className = "quick-open-hint";
-      hint.textContent = "↑/↓ 选择 · Enter 执行 · 输入 > 切换命令面板 · Esc 关闭";
+      hint.textContent = t("quick.hint");
       wrap.append(input, list, hint);
       body.appendChild(wrap);
 
@@ -69,7 +91,13 @@ export function createQuickOpen({
             sub.textContent = it.accel || it.cmd || "";
           } else {
             name.textContent = it.name;
-            sub.textContent = it.line ? t("quick.lineSub", { n: it.line, text: it.text }) : it.dir;
+            if (it.line) {
+              sub.textContent = t("quick.lineSub", { n: it.line, text: it.text });
+            } else if (it.sourceLabel) {
+              sub.textContent = it.dir ? `${it.sourceLabel} · ${it.dir}` : it.sourceLabel;
+            } else {
+              sub.textContent = it.dir || "";
+            }
           }
           row.append(name, sub);
           row.addEventListener("mousedown", (e) => e.preventDefault());
@@ -80,9 +108,9 @@ export function createQuickOpen({
           const empty = document.createElement("div");
           empty.className = "quick-open-empty";
           if (mode === "command") {
-            empty.textContent = "没有匹配的命令";
-          } else if (!hasFileSearch) {
-            empty.textContent = "当前未打开磁盘目录；输入 > 可直接搜索并执行命令";
+            empty.textContent = t("quick.noCommand");
+          } else if (!hasFileSearch && !fallbackFiles.length) {
+            empty.textContent = t("quick.noDirHint");
           } else {
             empty.textContent = input.value.trim() ? t("quick.noMatch") : t("quick.empty");
           }
@@ -100,6 +128,10 @@ export function createQuickOpen({
           return;
         }
         close();
+        if (item.line > 0 && typeof openSearchHit === "function") {
+          await openSearchHit(item);
+          return;
+        }
         if (samePath(item.path, state.path)) return;
         if (!(await settleCurrentDocument())) return;
         try {
@@ -122,8 +154,21 @@ export function createQuickOpen({
         mode = "file";
         const q = input.value.trim();
         const my = ++seq;
-        if (!q || !hasFileSearch) {
-          items = [];
+        if (!q) {
+          items = fallbackFiles.slice(0, 50);
+          sel = 0;
+          render();
+          return;
+        }
+        if (!hasFileSearch) {
+          const lower = q.toLowerCase();
+          items = fallbackFiles
+            .filter(
+              (f) =>
+                f.name.toLowerCase().includes(lower) ||
+                f.path.toLowerCase().includes(lower),
+            )
+            .slice(0, 50);
           sel = 0;
           render();
           return;
