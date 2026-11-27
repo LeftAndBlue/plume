@@ -1,4 +1,4 @@
-import { renderMarkdown } from './markdown-export.js';
+import { renderMarkdown } from './markdown-render.js';
 import { zipStore } from './docx-export.js';
 import { escapeXml, frontMatterEnd, splitMarkdownLines } from './markdown-source.js';
 

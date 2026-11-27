@@ -4,7 +4,8 @@
 use crate::fs_ops::AnyErr;
 use base64::Engine;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
+use std::sync::OnceLock;
 use tauri::AppHandle;
 use tauri_plugin_dialog::DialogExt;
 
@@ -79,6 +80,18 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+fn font_url_regex() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r#"url\(['"]?(?:[^)'"]*?/)?fonts/([^)'"]+?\.woff2)['"]?\)"#).unwrap()
+    })
+}
+
+fn img_src_regex() -> &'static regex::Regex {
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r#"(<img\b[^>]*?\bsrc\s*=\s*)(["'])([^"']+)(["'])"#).unwrap())
+}
+
 /// 导出页自包含：本地图片与 KaTeX woff2 一律内嵌成 data URI。
 pub fn materialize_html(html: &str, doc_dir: Option<&str>, fonts: Option<&Path>) -> String {
     let mut out = html.to_string();
@@ -86,17 +99,20 @@ pub fn materialize_html(html: &str, doc_dir: Option<&str>, fonts: Option<&Path>)
     // KaTeX 字体：fonts/X.woff2 / ./fonts/... / dist/fonts/... → data URI
     // 注意：Rust regex 不支持反向引用（\1），引号只做可选匹配，不配对校验。
     if let Some(font_dir) = fonts {
-        let re = regex::Regex::new(
-            r#"url\(['"]?(?:[^)'"]*?/)?fonts/([^)'"]+?\.woff2)['"]?\)"#,
-        )
-        .unwrap();
-        out = re
+        out = font_url_regex()
             .replace_all(&out, |caps: &regex::Captures| {
                 let name = caps
                     .get(1)
                     .map(|m| m.as_str().to_string())
                     .unwrap_or_default();
-                let file = font_dir.join(&name);
+                let rel = Path::new(&name);
+                if name.is_empty()
+                    || rel.is_absolute()
+                    || rel.components().any(|c| !matches!(c, Component::Normal(_)))
+                {
+                    return caps[0].to_string();
+                }
+                let file = font_dir.join(rel);
                 match fs::read(&file) {
                     Ok(bytes) => format!(
                         "url(data:font/woff2;base64,{})",
@@ -109,8 +125,7 @@ pub fn materialize_html(html: &str, doc_dir: Option<&str>, fonts: Option<&Path>)
     }
 
     // 图片 src：本地文件内嵌；绝对路径直接读，相对路径按文档目录解析。
-    let re = regex::Regex::new(r#"(<img\b[^>]*?\bsrc\s*=\s*)(["'])([^"']+)(["'])"#).unwrap();
-    out = re
+    out = img_src_regex()
         .replace_all(&out, |caps: &regex::Captures| {
             let whole = caps[0].to_string();
             let prefix = &caps[1];
@@ -227,9 +242,11 @@ mod tests {
             "b{src:url(\"fonts/KaTeX_Test-Regular.woff2\");}",
             "c{src:url('../fonts/KaTeX_Test-Regular.woff2');}",
             "d{src:url(/fonts/KaTeX_Test-Regular.woff2);}",
+            "e{src:url(fonts/../secret.woff2);}",
         );
         let out = materialize_html(css, None, Some(&dir));
         assert_eq!(out.matches("data:font/woff2;base64,").count(), 4);
+        assert!(out.contains("fonts/../secret.woff2"));
         assert!(!out.contains("fonts/KaTeX_Test"));
         let _ = fs::remove_dir_all(&dir);
     }

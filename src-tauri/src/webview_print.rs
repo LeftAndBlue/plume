@@ -126,6 +126,34 @@ fn finish_export(window: &WebviewWindow, key: &str) {
     }
 }
 
+struct ExportWindowGuard {
+    window: WebviewWindow,
+    key: String,
+    active: bool,
+}
+
+impl ExportWindowGuard {
+    fn new(window: WebviewWindow, key: String) -> Self {
+        Self { window, key, active: true }
+    }
+
+    fn finish(mut self) {
+        if self.active {
+            finish_export(&self.window, &self.key);
+            self.active = false;
+        }
+    }
+}
+
+impl Drop for ExportWindowGuard {
+    fn drop(&mut self) {
+        if self.active {
+            finish_export(&self.window, &self.key);
+            self.active = false;
+        }
+    }
+}
+
 fn make_webview_visible(window: &WebviewWindow) {
     let _ = window.with_webview(|webview| unsafe {
         if let Ok(core) = webview.controller().CoreWebView2() {
@@ -139,13 +167,14 @@ fn make_webview_visible(window: &WebviewWindow) {
 /// 20mm 是按中文文档的常规版心给的；原来的 0.4in（10mm）四边太窄，纸感像网页截图。
 pub fn print_to_pdf(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyErr> {
     let (window, key) = build_export_window(app, html)?;
-    make_webview_visible(&window);
+    let guard = ExportWindowGuard::new(window, key);
+    make_webview_visible(&guard.window);
     // 等页面、字体与 KaTeX/Mermaid 就绪（页面自报标记，见 READY_SCRIPT）
-    wait_for_ready(&window);
+    wait_for_ready(&guard.window);
 
     let (tx, rx) = channel::<bool>();
     let out_wide = wide(&out.to_string_lossy());
-    window.with_webview(move |webview| unsafe {
+    guard.window.with_webview(move |webview| unsafe {
         let core = match webview.controller().CoreWebView2() {
             Ok(c) => c,
             Err(_) => return,
@@ -178,7 +207,7 @@ pub fn print_to_pdf(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyEr
         let _ = core7.PrintToPdf(PCWSTR(out_wide.as_ptr()), settings.as_ref(), &handler);
     })?;
     let ok = pump_until(&rx, Duration::from_secs(90)).unwrap_or(false);
-    finish_export(&window, &key);
+    guard.finish();
     if ok {
         Ok(())
     } else {
@@ -189,11 +218,12 @@ pub fn print_to_pdf(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyEr
 /// 导出长图：先量 scrollHeight，把离屏窗口撑到全文高（上限 14000px），再一次 CapturePreview。
 pub fn capture_png(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyErr> {
     let (window, key) = build_export_window(app, html)?;
-    make_webview_visible(&window);
-    wait_for_ready(&window);
+    let guard = ExportWindowGuard::new(window, key);
+    make_webview_visible(&guard.window);
+    wait_for_ready(&guard.window);
 
     let (tx_h, rx_h) = channel::<String>();
-    window.with_webview(move |webview| unsafe {
+    guard.window.with_webview(move |webview| unsafe {
         if let Ok(core) = webview.controller().CoreWebView2() {
             let handler = ExecuteScriptCompletedHandler::create(Box::new(move |result, json| {
                 let _ = tx_h.send(if result.is_ok() { json } else { String::new() });
@@ -209,7 +239,7 @@ pub fn capture_png(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyErr
         .and_then(|s| s.trim().parse::<f64>().ok())
         .unwrap_or(1200.0)
         .clamp(600.0, 14000.0);
-    window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
+    guard.window.set_size(tauri::Size::Physical(tauri::PhysicalSize {
         width: 900,
         height: height as u32,
     }))?;
@@ -220,7 +250,7 @@ pub fn capture_png(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyErr
     // with_webview 闭包要求 Send：传裸指针，闭包内临时包装后 forget，
     // 释放仍由外层 stream 负责，避免双重 Release。
     let raw = Interface::as_raw(&stream) as usize;
-    window.with_webview(move |webview| unsafe {
+    guard.window.with_webview(move |webview| unsafe {
         if let Ok(core) = webview.controller().CoreWebView2() {
             let handler = CapturePreviewCompletedHandler::create(Box::new(move |result| {
                 let _ = tx.send(result.is_ok());
@@ -236,7 +266,7 @@ pub fn capture_png(app: &AppHandle, html: &str, out: &Path) -> Result<(), AnyErr
         }
     })?;
     let ok = pump_until(&rx, Duration::from_secs(60)).unwrap_or(false);
-    finish_export(&window, &key);
+    guard.finish();
     if !ok {
         return Err("WebView2 截图失败".into());
     }

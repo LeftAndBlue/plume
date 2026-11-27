@@ -41,6 +41,29 @@ export default defineConfig({
   envPrefix: ['VITE_', 'TAURI_'],
   build: {
     target: 'chrome120',
-    chunkSizeWarningLimit: 1600,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/vue') || id.includes('node_modules/@vue') || id.includes('node_modules/pinia') || id.includes('node_modules/lucide-vue-next')) {
+            return 'vendor-vue';
+          }
+          if (
+            id.includes('node_modules/@codemirror/state') ||
+            id.includes('node_modules/@codemirror/view') ||
+            id.includes('node_modules/@codemirror/language') ||
+            id.includes('node_modules/@codemirror/commands') ||
+            id.includes('node_modules/@codemirror/search') ||
+            id.includes('node_modules/@codemirror/lang-markdown') ||
+            id.includes('node_modules/@lezer/common') ||
+            id.includes('node_modules/@lezer/highlight') ||
+            id.includes('node_modules/@lezer/markdown') ||
+            id.includes('node_modules/@lezer/lr')
+          ) {
+            return 'vendor-cm';
+          }
+        },
+      },
+    },
   },
 });

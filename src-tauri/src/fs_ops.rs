@@ -4,8 +4,8 @@
 
 use serde::Serialize;
 use std::fs;
-use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::io::{Read, Write};
+use std::path::{Component, Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
 const DOC_EXTS: [&str; 3] = ["md", "markdown", "txt"];
@@ -258,11 +258,10 @@ pub fn list_dir(d: &str) -> Result<Vec<Entry>, AnyErr> {
             .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
     });
     entries.truncate(MAX_LIST);
-    // 摘要只读最终保留的文件，避免为被截断的条目白做 IO。
+    // 摘要只读最终保留的文件头部 700 字节，避免整文件读入内存。
     for e in &mut entries {
         if !e.dir && e.size <= 256 * 1024 {
-            if let Ok(bytes) = fs::read(&e.path) {
-                let head: Vec<u8> = bytes.into_iter().take(700).collect();
+            if let Ok(head) = read_head_bytes(&e.path, 700) {
                 e.snippet = decode_text(&head).0;
             }
         }
@@ -270,16 +269,45 @@ pub fn list_dir(d: &str) -> Result<Vec<Entry>, AnyErr> {
     Ok(entries)
 }
 
+fn read_head_bytes(path: &str, max_bytes: u64) -> std::io::Result<Vec<u8>> {
+    let f = fs::File::open(path)?;
+    let mut buf = Vec::with_capacity(max_bytes as usize);
+    f.take(max_bytes).read_to_end(&mut buf)?;
+    Ok(buf)
+}
+
 /// Windows 下大小写不敏感，比较路径一律先小写化（沿用原实现的取舍）。
 fn norm(s: &str) -> String {
     s.replace('/', "\\").to_lowercase()
 }
 
+fn has_parent_dir(p: &Path) -> bool {
+    p.components().any(|c| matches!(c, Component::ParentDir))
+}
+
 fn inside_fs_path(root: &str, target: &str) -> bool {
+    let root_path = Path::new(root);
+    let target_path = Path::new(target);
+    if has_parent_dir(root_path) || has_parent_dir(target_path) {
+        return false;
+    }
     let r = norm(root);
     let t = norm(target);
     let sep = std::path::MAIN_SEPARATOR;
-    !r.is_empty() && (t == r || t.starts_with(&format!("{r}{sep}")))
+    if r.is_empty() || !(t == r || t.starts_with(&format!("{r}{sep}"))) {
+        return false;
+    }
+    // 路径已存在时再用 canonicalize 校验，防止符号链接/联接点越出根目录。
+    if let (Ok(cr), Ok(ct)) = (fs::canonicalize(root_path), fs::canonicalize(target_path)) {
+        let cr_s = norm(&pstr(&cr));
+        let ct_s = norm(&pstr(&ct));
+        return ct_s == cr_s || ct_s.starts_with(&format!("{cr_s}{sep}"));
+    }
+    true
+}
+
+fn is_skipped_search_dir(name: &str) -> bool {
+    name.starts_with('.') || matches!(name.to_ascii_lowercase().as_str(), "node_modules" | "target" | "dist")
 }
 
 fn safe_name(name: &str) -> bool {
@@ -318,16 +346,19 @@ pub fn search_files(dir: &str, query: &str, opts: SearchOpts) -> Result<SearchOu
                 Err(_) => continue,
             };
             let name = item.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') || name.eq_ignore_ascii_case("node_modules") {
-                continue;
-            }
             let path = item.path();
             let meta = match item.metadata() {
                 Ok(m) => m,
                 Err(_) => continue,
             };
             if meta.is_dir() {
+                if is_skipped_search_dir(&name) {
+                    continue;
+                }
                 stack.push(path);
+                continue;
+            }
+            if name.starts_with('.') {
                 continue;
             }
             let ext = path
@@ -406,7 +437,7 @@ pub fn replace_in_files(
             }
             let Ok(meta) = ent.metadata() else { continue };
             if meta.is_dir() {
-                if matches!(name.as_str(), "node_modules" | "target" | "dist") {
+                if is_skipped_search_dir(&name) {
                     continue;
                 }
                 stack.push(path);
@@ -594,5 +625,23 @@ mod tests {
         // emoji 在 GBK 里无法表示：必须报错提示另存 UTF-8，而不是静默变问号
         let err = encode_for_save("你好 🙂", "gbk").unwrap_err();
         assert!(err.to_string().contains("另存为"));
+    }
+
+    #[test]
+    fn inside_fs_path_rejects_parent_traversal() {
+        assert!(inside_fs_path(r"C:\notes", r"C:\notes\sub\a.md"));
+        assert!(!inside_fs_path(r"C:\notes", r"C:\notes\..\secret.md"));
+        assert!(!inside_fs_path(r"C:\notes", r"C:\notes2\a.md"));
+    }
+
+    #[test]
+    fn read_head_bytes_truncates_large_file() {
+        let dir = std::env::temp_dir().join(format!("plume-head-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("sample.md");
+        fs::write(&file, vec![b'a'; 2048]).unwrap();
+        let head = read_head_bytes(&pstr(&file), 700).unwrap();
+        assert_eq!(head.len(), 700);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

@@ -1,4 +1,4 @@
-import { renderMarkdown, inline, esc } from "./markdown-export.js";
+import { renderMarkdown, inline, esc } from "./markdown-render.js";
 import { getCodeFences, isFenceDraft } from "./code-fences.js";
 
 const BLOCK_PREFIX_RE = /^\s{0,3}(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+|>\s?)/;

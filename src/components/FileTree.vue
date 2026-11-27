@@ -1,5 +1,5 @@
 <script setup>
-import { reactive, ref, watch, provide } from 'vue';
+import { reactive, ref, watch, provide, onUnmounted } from 'vue';
 import { FileText } from 'lucide-vue-next';
 import { useShellStore } from '../stores/shell.js';
 import FileTreeEntry from './FileTreeEntry.vue';
@@ -53,8 +53,11 @@ watch(
 );
 
 // Rust 目录监听到工作区文件变化时刷新（编辑器保存/外部改动都会触发）
-window.studio?.onFsChanged?.(() => {
+const stopFsWatch = window.studio?.onFsChanged?.(() => {
   if (shell.dir) loadRoot();
+});
+onUnmounted(() => {
+  stopFsWatch?.();
 });
 
 async function toggle(path) {
@@ -73,7 +76,7 @@ function showContext(event, entry) {
   if (!entry.dir) {
     const isCurrent = samePath(entry.path, shell.path);
     const isSplit = samePath(entry.path, shell.splitPath);
-    items.push({ label: '打开', action: () => api.openPath(entry.path) });
+    items.push({ label: t('tree.open'), action: () => api.openPath(entry.path) });
     if (isSplit) {
       items.push({ label: t('tabs.closeSplit'), action: () => api.closeSplit?.() });
     } else {
@@ -86,17 +89,17 @@ function showContext(event, entry) {
   }
   if (entry.dir) {
     items.push(
-      { label: '新建文档', action: () => api.fileOps.create(entry.path, false) },
-      { label: '新建文件夹', action: () => api.fileOps.create(entry.path, true) },
+      { label: t('tree.newDoc'), action: () => api.fileOps.create(entry.path, false) },
+      { label: t('tree.newDir'), action: () => api.fileOps.create(entry.path, true) },
     );
   }
   items.push(
     { separator: true },
-    { label: '复制路径', action: () => api.fileOps.copyText(entry.path, '路径已复制') },
-    { label: '在文件管理器中显示', action: () => window.studio.showFsEntry(shell.dir, entry.path) },
+    { label: t('tree.copyPath'), action: () => api.fileOps.copyText(entry.path, t('tabs.pathCopied')) },
+    { label: t('tree.revealInExplorer'), action: () => window.studio.showFsEntry(shell.dir, entry.path) },
     { separator: true },
-    { label: '重命名…', action: () => api.fileOps.rename(entry) },
-    { label: '移到回收站', danger: true, action: () => api.fileOps.trash(entry) },
+    { label: t('tree.rename'), action: () => api.fileOps.rename(entry) },
+    { label: t('tree.trash'), danger: true, action: () => api.fileOps.trash(entry) },
   );
   api.contextMenu(event, items);
 }

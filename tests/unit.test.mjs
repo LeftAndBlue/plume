@@ -43,6 +43,7 @@ import {
   stepFontSize,
 } from '../src/editor/jump-history.js';
 import { styleWeChatHtml } from '../src/editor/wechat-html.js';
+import { renderMarkdown, sanitizeExportUrl } from '../src/editor/markdown-render.js';
 import { createTabsManager } from '../src/editor/tabs.js';
 import { resolveSrc, setDocBase } from '../src/editor/widgets.js';
 import {
@@ -956,4 +957,30 @@ test('resolveSrc 支持按分栏独立的 baseOverride 解析不同目录的相�
     'file:///C:/workspace/other/assets/b.png',
   );
   setDocBase(null);
+});
+
+test('Rust 端 theme_paths 的 THEME_IDS 与 theme-catalog.js 完全一致', () => {
+  const libRs = fs.readFileSync(path.join(ROOT, 'src-tauri/src/lib.rs'), 'utf-8');
+  for (const theme of THEMES) {
+    assert.ok(
+      libRs.includes(`"${theme.id}"`),
+      `src-tauri/src/lib.rs THEME_IDS 缺少主题: ${theme.id}`,
+    );
+  }
+});
+
+test('markdown-render 过滤危险协议并对导出的链接与图片属性进行转义', () => {
+  assert.equal(sanitizeExportUrl('javascript:alert(1)'), '');
+  assert.equal(sanitizeExportUrl('  JaVaScRiPt:alert(1)  '), '');
+  assert.equal(sanitizeExportUrl('data:text/html,<script>alert(1)</script>', { allowDataImage: true }), '');
+  assert.equal(
+    sanitizeExportUrl('data:image/png;base64,iVBORw0KGgo=', { allowDataImage: true }),
+    'data:image/png;base64,iVBORw0KGgo=',
+  );
+
+  const md = '[点我](javascript:alert(1)) 与 ![图](assets/a&b.png)';
+  const html = renderMarkdown(md);
+  assert.ok(!html.includes('javascript:'), '不应输出 javascript: 协议');
+  assert.ok(html.includes('href="#"'));
+  assert.ok(html.includes('src="assets/a&amp;b.png"'));
 });

@@ -3,6 +3,7 @@
  * - 复用当前主题的 CSS 变量（含 Orange Heart 橙心、Lapis 青金石等全部内置主题）
  * - 把 Markdown 渲染为自带 inline style 的 HTML，粘贴进微信公众号编辑器、飞书文档或邮件时保留排版
  */
+import { renderMarkdown } from './markdown-render.js';
 
 /** 常用主题的内联兜底色板（在无 DOM 或单元测试环境下也可直接按 themeId 渲染）。 */
 export const WECHAT_THEME_PRESETS = {
@@ -222,17 +223,13 @@ export function styleWeChatHtml(rawHtml, { themeId = 'white', tokens = null } = 
 }
 
 /**
- * 将 Markdown 转为带完整内联样式的公众号/富文本 HTML（懒加载 markdown-export.js）。
+ * 将 Markdown 转为带完整内联样式的公众号/富文本 HTML。
  */
 export async function renderWeChatHtml(
   markdown,
   { themeId = 'white', tokens = null, imageResolver = null, renderHtml = null } = {}
 ) {
-  let render = renderHtml;
-  if (!render) {
-    const mod = await import('./markdown-export.js');
-    render = mod.renderMarkdown;
-  }
+  const render = renderHtml || renderMarkdown;
   const rawHtml = render(String(markdown || ''), null, imageResolver);
   return styleWeChatHtml(rawHtml, { themeId, tokens });
 }

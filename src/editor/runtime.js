@@ -4045,32 +4045,48 @@ function renderThemeMenuPage(host, { run, close }) {
     form.appendChild(row);
   };
 
-  selectRow("主题", THEMES.map((t) => [t.id, t.label]), prefs.theme, (v) => run(`theme:${v}`));
+  selectRow(t("settings.theme"), THEMES.map((th) => [th.id, th.label]), prefs.theme, (v) => run(`theme:${v}`));
   selectRow(
-    "密度",
-    [["compact", "紧凑"], ["comfortable", "舒适"], ["loose", "疏朗"]],
+    t("settings.density"),
+    [
+      ["compact", t("settings.density.compact")],
+      ["comfortable", t("settings.density.comfortable")],
+      ["loose", t("settings.density.loose")],
+    ],
     prefs.density,
     (v) => run(`appearance:density:${v}`),
   );
-  const widths = [["narrow", "窄版心"], ["standard", "标准版心"], ["wide", "宽版心"], ["full", "全宽"]];
+  const widths = [
+    ["narrow", t("themeMenu.width.narrow")],
+    ["standard", t("themeMenu.width.standard")],
+    ["wide", t("themeMenu.width.wide")],
+    ["full", t("themeMenu.width.full")],
+  ];
   // 设置面板里拖过版心宽度时是 custom，补一个当前项，避免下拉显示成别的值
-  if (!widths.some(([v]) => v === prefs.pageWidth)) widths.push([prefs.pageWidth, "自定义宽度"]);
-  selectRow("版心", widths, prefs.pageWidth, (v) => run(`appearance:width:${v}`));
+  if (!widths.some(([v]) => v === prefs.pageWidth)) widths.push([prefs.pageWidth, t("themeMenu.width.custom")]);
+  selectRow(t("themeMenu.width"), widths, prefs.pageWidth, (v) => run(`appearance:width:${v}`));
   selectRow(
-    "正文字号",
+    t("settings.fontSize"),
     Array.from({ length: 17 }, (_, i) => { const n = 12 + i; return [n, `${n} px`]; }),
     prefs.fontSize,
     (v) => run(`appearance:size:${v}`),
   );
-  const fonts = [["theme", "跟随主题字体"], ["sans", "无衬线"], ["serif", "衬线"]];
-  if (prefs.fontStyle === "custom") fonts.push(["custom", "自定义字体"]);
-  selectRow("字体", fonts, prefs.fontStyle, (v) => run(`appearance:font:${v}`));
-  checkRow("首行缩进", prefs.firstLineIndent, () => run("appearance:indent"));
-  checkRow("代码行号", prefs.codeLineNumbers, () => run("appearance:code-ln"));
+  const fonts = [
+    ["theme", t("settings.fontStyle.theme")],
+    ["sans", t("settings.fontStyle.sans")],
+    ["serif", t("settings.fontStyle.serif")],
+  ];
+  if (prefs.fontStyle === "custom") fonts.push(["custom", t("settings.fontStyle.custom")]);
+  selectRow(t("settings.fontStyle"), fonts, prefs.fontStyle, (v) => run(`appearance:font:${v}`));
+  checkRow(t("settings.firstLineIndent"), prefs.firstLineIndent, () => run("appearance:indent"));
+  checkRow(t("settings.codeLineNumbers"), prefs.codeLineNumbers, () => run("appearance:code-ln"));
 
   const actions = document.createElement("div");
   actions.className = "menu-form-actions";
-  for (const [label, cmd] of [["主题商店…", "theme-store"], ["打开主题文件夹", "theme-folder"]]) {
+  for (const [label, cmd] of [
+    [t("themeMenu.themeStore"), "theme-store"],
+    [t("themeMenu.themeFolder"), "theme-folder"],
+  ]) {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = label;
@@ -4102,12 +4118,12 @@ const MENUS = [
         { type: "sep" },
         { label: t("menu.save"), cmd: "save", accel: ACCEL.save },
         { label: t("menu.saveAs"), cmd: "save-as", accel: ACCEL["save-as"] },
-        { label: "恢复未保存草稿…", cmd: "draft-recovery" },
+        { label: t("menu.draftRecovery"), cmd: "draft-recovery" },
         { type: "sep" },
         {
           label: t("menu.export"),
           submenu: () => [
-            { label: "复制为公众号 / 富文本样式", cmd: "copy-wechat" },
+            { label: t("menu.copyWechat"), cmd: "copy-wechat" },
             { type: "sep" },
             { label: t("menu.exportHtml"), cmd: "export-html" },
             { label: t("menu.exportHtmlBare"), cmd: "export-html-bare" },
@@ -4143,11 +4159,11 @@ const MENUS = [
         checked: () => sidebarVisible() && sideView() === "outline",
       },
       { type: "sep" },
-      { label: "跨文件搜索与替换", cmd: "search-files", accel: ACCEL["search-files"] },
-      { label: "折叠当前章节", cmd: "fold-heading", accel: ACCEL["fold-heading"] },
-      { label: "展开当前章节", cmd: "unfold-heading", accel: ACCEL["unfold-heading"] },
-      { label: "折叠全部标题章节", cmd: "fold-all-headings" },
-      { label: "展开全部标题章节", cmd: "unfold-all-headings" },
+      { label: t("menu.searchFiles"), cmd: "search-files", accel: ACCEL["search-files"] },
+      { label: t("menu.foldHeading"), cmd: "fold-heading", accel: ACCEL["fold-heading"] },
+      { label: t("menu.unfoldHeading"), cmd: "unfold-heading", accel: ACCEL["unfold-heading"] },
+      { label: t("menu.foldAllHeadings"), cmd: "fold-all-headings" },
+      { label: t("menu.unfoldAllHeadings"), cmd: "unfold-all-headings" },
       {
         label: t("menu.showSidebar"),
         cmd: "toggle-sidebar",
@@ -4490,14 +4506,14 @@ function askUnsaved() {
       }
     };
     openSheet(
-      "未保存的修改",
+      t("unsaved.title"),
       (body, close) => {
         const text = document.createElement("p");
         text.className = "settings-note";
-        text.textContent = "是否保存更改？";
+        text.textContent = t("unsaved.question");
         const hint = document.createElement("p");
         hint.className = "settings-note";
-        hint.textContent = "如果不保存，您的更改将会丢失。";
+        hint.textContent = t("unsaved.hint");
 
         // Typora 式排布：主操作靠左（保存 / 不保存），取消单独靠右。
         const row = document.createElement("div");
@@ -4507,9 +4523,9 @@ function askUnsaved() {
         const side = document.createElement("div");
         side.className = "ask-group";
         for (const [label, value, kind, group] of [
-          ["保存并关闭", "save", "primary", main],
-          ["不保存", "discard", "danger", main],
-          ["取消", "cancel", "ghost", side],
+          [t("unsaved.saveAndClose"), "save", "primary", main],
+          [t("unsaved.discard"), "discard", "danger", main],
+          [t("unsaved.cancel"), "cancel", "ghost", side],
         ]) {
           const b = document.createElement("button");
           b.type = "button";

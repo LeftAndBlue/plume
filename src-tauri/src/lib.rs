@@ -13,12 +13,25 @@ use fs_ops::AnyErr;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_dialog::DialogExt;
 
-#[derive(Default)]
-struct DirtyState(AtomicBool);
+const THEME_IDS: [&str; 14] = [
+    "white",
+    "sepia",
+    "vue",
+    "night",
+    "github",
+    "newsprint",
+    "pixyll",
+    "gothic",
+    "lapis",
+    "orangeheart",
+    "solarized",
+    "drake",
+    "nord",
+    "onedark",
+];
 
 fn cmd_err(e: AnyErr) -> String {
     e.to_string()
@@ -126,7 +139,7 @@ fn theme_paths(app: AppHandle) -> Result<HashMap<String, String>, String> {
         let _ = std::fs::write(&base, BASE_TEMPLATE);
     }
     out.insert("base".to_string(), base.to_string_lossy().to_string());
-    for name in ["white", "night", "glass", "aurora", "paper", "solar", "neon", "chalk"] {
+    for name in THEME_IDS {
         let f = dir.join(format!("{name}.css"));
         if !f.exists() {
             let _ = std::fs::write(
@@ -531,8 +544,8 @@ async fn dialog_info(app: AppHandle, payload: InfoPayload) -> Result<bool, Strin
 /* ---------------- 窗口状态 ---------------- */
 
 #[tauri::command]
-fn state_dirty(app: AppHandle, v: bool) -> Result<bool, String> {
-    app.state::<DirtyState>().0.store(v, Ordering::Relaxed);
+fn state_dirty(_app: AppHandle, _v: bool) -> Result<bool, String> {
+    // 退出拦截已统一交由前端请求关闭流程处理，这里仅保持 API 兼容。
     Ok(true)
 }
 
@@ -620,7 +633,6 @@ pub fn run() {
         .manage(InitialFile(std::sync::Mutex::new(file_arg(
             &std::env::args().collect::<Vec<_>>(),
         ))))
-        .manage(DirtyState::default())
         .manage(watch::WatchState::default())
         .register_uri_scheme_protocol("export", |_ctx, request| {
             let key = request.uri().path().trim_start_matches('/').to_string();

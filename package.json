@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "node --test tests/unit.test.mjs",
     "tauri": "tauri",
     "dev:app": "tauri dev",
     "dist": "npm run build && tauri build --bundles nsis"

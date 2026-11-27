@@ -72,7 +72,7 @@ function openSheet(title, content, options) {
 }
 
 function showLicense() {
-  openSheet("许可", `<pre class="license-copy">${LICENSE_TEXT.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]))}</pre>`);
+  openSheet(t("menu.license"), `<pre class="license-copy">${LICENSE_TEXT.replace(/[&<>]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[ch]))}</pre>`);
 }
 
 function openThemeStore() {
@@ -85,11 +85,11 @@ function openThemeStore() {
     </button>`;
   }).join("");
   openSheet(
-    "主题商店",
+    t("themeStore.title"),
     `<div class="theme-grid">${cards}</div>
-     <button type="button" id="back-settings" class="settings-btn">返回设置</button>
-     <button type="button" id="theme-folder" class="settings-btn">打开主题文件夹</button>
-     <p class="settings-note">这里的主题都已经装在程序里。主题文件夹中的「主题名.user.css」会盖在对应主题上面，用来细调颜色和字体。</p>`,
+     <button type="button" id="back-settings" class="settings-btn">${t("themeStore.back")}</button>
+     <button type="button" id="theme-folder" class="settings-btn">${t("themeStore.openFolder")}</button>
+     <p class="settings-note">${t("themeStore.note")}</p>`,
   );
   document.getElementById("settings-body")?.querySelectorAll("[data-theme]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -187,7 +187,6 @@ async function openSettings() {
       const n = Number(el.value);
       const patch = { [key]: n };
       if (key === "contentPx") patch.pageWidth = "custom";
-      if (key === "fontFamily") patch.fontStyle = "custom";
       updateAppearance(patch);
     } else if (key === "lineHeight" || key === "paraEm") {
       updateAppearance({ [key]: Number(el.value) });

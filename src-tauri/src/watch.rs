@@ -52,6 +52,19 @@ fn content_hash(p: &Path) -> Option<u64> {
     std::fs::read(p).ok().map(|bytes| hash_bytes(&bytes))
 }
 
+fn same_path(a: &Path, b: &Path) -> bool {
+    let na = a.to_string_lossy().replace('/', "\\");
+    let nb = b.to_string_lossy().replace('/', "\\");
+    #[cfg(windows)]
+    {
+        na.eq_ignore_ascii_case(&nb)
+    }
+    #[cfg(not(windows))]
+    {
+        na == nb
+    }
+}
+
 /// 保存成功后由 file_save / file_save_as 调用：登记自写的 mtime 与内容指纹。
 /// 指纹直接读磁盘字节（而非前端传入的 UTF-8 文本），GBK/UTF-16 等按原编码写回时同样一致。
 /// 必须赶在监听线程 300ms 去抖到期之前完成（命令返回前同步执行，余量充足）。
@@ -59,7 +72,7 @@ pub fn note_self_write(app: &AppHandle, p: &str) {
     let state = app.state::<WatchState>();
     let path = Path::new(p);
     let Ok(watched) = state.watched_doc.lock() else { return };
-    if watched.as_deref() != Some(path) {
+    if !watched.as_deref().is_some_and(|w| same_path(w, path)) {
         return;
     }
     let hash = content_hash(path);
@@ -107,7 +120,7 @@ pub fn watch_document(app: &AppHandle, p: Option<String>) -> Result<(), String> 
                     if !interesting {
                         continue;
                     }
-                    let hit_doc = event.paths.iter().any(|changed| *changed == doc);
+                    let hit_doc = event.paths.iter().any(|changed| same_path(changed, &doc));
                     if hit_doc {
                         doc_dirty_at = Some(Instant::now());
                     } else {

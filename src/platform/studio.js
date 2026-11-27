@@ -31,6 +31,25 @@ export function localFileUrl(path) {
   return convertFileSrc(path);
 }
 
+function bindListener(subscribe) {
+  let disposed = false;
+  let unlisten = null;
+  Promise.resolve(subscribe())
+    .then((fn) => {
+      if (disposed) {
+        if (typeof fn === 'function') fn();
+      } else {
+        unlisten = fn;
+      }
+    })
+    .catch(() => {});
+  return () => {
+    disposed = true;
+    if (typeof unlisten === 'function') unlisten();
+    unlisten = null;
+  };
+}
+
 function createStudio() {
   const win = getCurrentWindow();
   return {
@@ -106,34 +125,31 @@ function createStudio() {
     // 冷启动时由命令行传入、待打开的文档（文件关联「打开方式」/双击文档），只取一次
     takeInitialFile: () => invoke('take_initial_file'),
 
-    onCommand: (cb) => {
-      listen('cmd', (e) => cb(e.payload)).catch(() => {});
-    },
-    onExternalChange: (cb) => {
-      listen('doc-external-change', (e) => cb(e.payload)).catch(() => {});
-    },
-    onFsChanged: (cb) => {
-      listen('fs-changed', (e) => cb(e.payload)).catch(() => {});
-    },
+    onCommand: (cb) => bindListener(() => listen('cmd', (e) => cb(e.payload))),
+    onExternalChange: (cb) => bindListener(() => listen('doc-external-change', (e) => cb(e.payload))),
+    onFsChanged: (cb) => bindListener(() => listen('fs-changed', (e) => cb(e.payload))),
 
     /** Tauri 的原生拖放事件（dragDropEnabled 时 HTML5 drop 不触发，路径只能从这里拿）。 */
-    onNativeDrop: (cb) => {
-      win.onDragDropEvent((event) => {
-        if (event.payload.type === 'drop') cb(event.payload.paths);
-      }).catch(() => {});
-    },
+    onNativeDrop: (cb) =>
+      bindListener(() =>
+        win.onDragDropEvent((event) => {
+          if (event.payload.type === 'drop') cb(event.payload.paths);
+        }),
+      ),
     /** 窗口关闭请求：Rust 侧拦截 WM_CLOSE 后转发给前端，前端处理完未保存文档再真正退出。 */
-    onCloseRequested: (cb) => {
-      listen('plume:close-requested', () => {
-        Promise.resolve(cb()).catch(() => {});
-      }).catch(() => {});
-    },
+    onCloseRequested: (cb) =>
+      bindListener(() =>
+        listen('plume:close-requested', () => {
+          Promise.resolve(cb()).catch(() => {});
+        }),
+      ),
     /** 应用已运行时再次打开文档（单实例回调转发），payload 为文件路径。 */
-    onOpenFile: (cb) => {
-      listen('plume:open-file', (e) => {
-        Promise.resolve(cb(e.payload)).catch(() => {});
-      }).catch(() => {});
-    },
+    onOpenFile: (cb) =>
+      bindListener(() =>
+        listen('plume:open-file', (e) => {
+          Promise.resolve(cb(e.payload)).catch(() => {});
+        }),
+      ),
   };
 }
 
